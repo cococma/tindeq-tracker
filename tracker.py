@@ -19,8 +19,8 @@ load_dotenv()
 # ── Tindeq Progressor BLE constants ──────────────────────────────────────────
 
 PROGRESSOR_SERVICE_UUID = "7e4e1701-1ea6-40c9-9dcc-13d34ffead57"
-WRITE_CHAR_UUID         = "7e4e1702-1ea6-40c9-9dcc-13d34ffead57"
-NOTIFY_CHAR_UUID        = "7e4e1703-1ea6-40c9-9dcc-13d34ffead57"
+WRITE_CHAR_UUID         = "7e4e1703-1ea6-40c9-9dcc-13d34ffead57"
+NOTIFY_CHAR_UUID        = "7e4e1702-1ea6-40c9-9dcc-13d34ffead57"
 
 CMD_TARE_SCALE          = bytes([0x64])
 CMD_START_WEIGHT_MEAS   = bytes([0x65])
@@ -109,28 +109,31 @@ async def run_session(notes=None):
         if response_code != RESP_WEIGHT_MEASUREMENT:
             return  # ignore non-measurement packets (battery, ack, etc.)
 
-        # Unpack: float32 force (kg) + uint32 device timestamp (microseconds)
-        force_kg, device_ts_us = struct.unpack_from("<fI", data, offset=1)
+        # Byte 1 is the payload length; samples start at offset 2
+        # Each sample is 8 bytes: float32 force (kg) + uint32 timestamp (microseconds)
+        num_samples = (len(data) - 2) // 8
+        for i in range(num_samples):
+            offset = 2 + i * 8
+            force_kg, device_ts_us = struct.unpack_from("<fI", data, offset=offset)
+            insert_measurement(conn, session_id, force_kg, device_ts_us)
+            measurement_count += 1
 
-        insert_measurement(conn, session_id, force_kg, device_ts_us)
-        measurement_count += 1
-
-        # Print a live readout every 10 samples (~8x/sec)
-        if measurement_count % 10 == 0:
+        # Print a live readout every 50 samples (~4x/sec at 15 samples/packet)
+        if measurement_count % 50 == 0:
             print(f"  {force_kg:.2f} kg  (sample {measurement_count})", end="\r")
 
     async with BleakClient(address) as client:
         print("Connected. Taring scale...")
-        await client.write_gatt_char(WRITE_CHAR_UUID, CMD_TARE_SCALE, response=True)
+        await client.write_gatt_char(WRITE_CHAR_UUID, CMD_TARE_SCALE, response=False)
         await asyncio.sleep(0.5)
 
         print("Starting measurement stream. Press Ctrl+C to stop.")
         await client.start_notify(NOTIFY_CHAR_UUID, handle_notification)
-        await client.write_gatt_char(WRITE_CHAR_UUID, CMD_START_WEIGHT_MEAS, response=True)
+        await client.write_gatt_char(WRITE_CHAR_UUID, CMD_START_WEIGHT_MEAS, response=False)
 
         await stop_event.wait()
 
-        await client.write_gatt_char(WRITE_CHAR_UUID, CMD_STOP_WEIGHT_MEAS, response=True)
+        await client.write_gatt_char(WRITE_CHAR_UUID, CMD_STOP_WEIGHT_MEAS, response=False)
         await client.stop_notify(NOTIFY_CHAR_UUID)
 
     close_session(conn, session_id)
