@@ -6,7 +6,7 @@ Streams force data over Bluetooth and stores it in PostgreSQL.
 import asyncio
 import struct
 import signal
-import sys
+import subprocess
 from datetime import datetime
 
 import psycopg2
@@ -28,6 +28,91 @@ CMD_STOP_WEIGHT_MEAS    = bytes([0x66])
 
 RESP_WEIGHT_MEASUREMENT = 0x01
 
+# ── Audio ─────────────────────────────────────────────────────────────────────
+
+def say(text):
+    """Fire a macOS text-to-speech cue without blocking."""
+    subprocess.Popen(["say", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+async def countdown(seconds):
+    """Speak a countdown for the last N seconds of a phase."""
+    for i in range(seconds, 0, -1):
+        say(str(i))
+        await asyncio.sleep(1)
+
+
+async def run_timer(cfg, stop_event):
+    """
+    Run audio cues for repeaters and max hang sessions.
+    Runs concurrently with the BLE measurement stream.
+    """
+    on_s       = cfg.get("on_seconds") or 7
+    off_s      = cfg.get("off_seconds") or 3
+    sets       = cfg.get("target_sets") or 1
+    reps       = cfg.get("target_reps") or 1
+    set_rest_s = cfg.get("set_rest_s") or 180
+
+    # 3-second lead-in before the first hang
+    say("Starting in")
+    await countdown(3)
+
+    for set_num in range(1, sets + 1):
+        if stop_event.is_set():
+            return
+
+        for rep_num in range(1, reps + 1):
+            if stop_event.is_set():
+                return
+
+            # ── Hang phase ────────────────────────────────────────────────
+            say("Hang")
+
+            if on_s > 3:
+                await asyncio.sleep(on_s - 3)
+                if stop_event.is_set():
+                    return
+                await countdown(3)
+            else:
+                await asyncio.sleep(on_s)
+
+            # ── Rest phase (between reps) ─────────────────────────────────
+            if rep_num < reps:
+                say("Rest")
+                if off_s > 3:
+                    await asyncio.sleep(off_s - 3)
+                    if stop_event.is_set():
+                        return
+                    await countdown(3)
+                else:
+                    await asyncio.sleep(off_s)
+
+        # ── Set complete ──────────────────────────────────────────────────
+        if set_num < sets:
+            say(f"Set {set_num} complete. Rest.")
+
+            # Announce at 60s, 30s, 10s remaining
+            checkpoints = [60, 30, 10]
+            elapsed = 0
+            for cp in checkpoints:
+                wait = set_rest_s - elapsed - cp
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    if stop_event.is_set():
+                        return
+                    say(f"{cp} seconds")
+                    elapsed = set_rest_s - cp
+
+            remaining = set_rest_s - elapsed
+            if remaining > 3:
+                await asyncio.sleep(remaining - 3)
+                if stop_event.is_set():
+                    return
+            await countdown(3)
+
+    say("Session complete")
+
+
 # ── Prompt helpers ────────────────────────────────────────────────────────────
 
 def prompt(label, default):
@@ -42,7 +127,7 @@ def prompt_int(label, default):
         try:
             return int(val)
         except ValueError:
-            print(f"    Enter a whole number.")
+            print("    Enter a whole number.")
 
 
 def prompt_float(label, default):
@@ -51,7 +136,7 @@ def prompt_float(label, default):
         try:
             return float(val)
         except ValueError:
-            print(f"    Enter a number.")
+            print("    Enter a number.")
 
 
 def prompt_choice(label, options, default_index=0):
@@ -99,47 +184,49 @@ def get_session_config():
     grip_type     = prompt_choice("Grip", GRIP_OPTIONS, default_index=0)
 
     print()
-    edge_depth_mm    = prompt_int("Edge depth (mm)", 20)
-    target_weight_kg = prompt_float("Target weight (kg)", 0)
+    edge_depth_mm = prompt_int("Edge depth (mm)", 20)
 
     cfg = {
-        "exercise_type":    exercise_type,
-        "grip_type":        grip_type,
-        "edge_depth_mm":    edge_depth_mm,
-        "target_weight_kg": target_weight_kg,
-        "on_seconds":       None,
-        "off_seconds":      None,
-        "target_reps":      None,
-        "target_sets":      None,
+        "exercise_type":     exercise_type,
+        "grip_type":         grip_type,
+        "edge_depth_mm":     edge_depth_mm,
+        "target_weight_kg":  0,
+        "on_seconds":        None,
+        "off_seconds":       None,
+        "target_reps":       None,
+        "target_sets":       None,
+        "set_rest_s":        180,
         "target_duration_s": None,
-        "target_pull_reps": None,
+        "target_pull_reps":  None,
     }
 
     if exercise_type == "repeaters":
+        cfg["target_weight_kg"] = prompt_float("Target weight (kg)", 0)
+
+    if exercise_type in ("repeaters", "max_hang"):
         print()
-        on_off = prompt("On/off seconds", "7/3")
+        on_off = prompt("On/off seconds", "7/3" if exercise_type == "repeaters" else "7/53")
         try:
             on_s, off_s = [int(x.strip()) for x in on_off.split("/")]
         except Exception:
-            on_s, off_s = 7, 3
-        sets_reps = prompt("Sets/reps", "6/6")
+            on_s, off_s = (7, 3) if exercise_type == "repeaters" else (7, 53)
+
+        sets_reps = prompt("Sets/reps", "6/6" if exercise_type == "repeaters" else "3/3")
         try:
             sets, reps = [int(x.strip()) for x in sets_reps.split("/")]
         except Exception:
-            sets, reps = 6, 6
+            sets, reps = (6, 6) if exercise_type == "repeaters" else (3, 3)
+
+        cfg["set_rest_s"] = prompt_int("Set rest (seconds)", 180)
         cfg.update({"on_seconds": on_s, "off_seconds": off_s,
                     "target_sets": sets, "target_reps": reps})
-
-    elif exercise_type == "max_hang":
-        print()
-        cfg["target_duration_s"] = prompt_int("Target duration (seconds)", 10)
 
     elif exercise_type == "recruitment_pull":
         print()
         cfg["target_pull_reps"] = prompt_int("Number of pulls", 5)
 
     elif exercise_type in ("mvc_test", "rfd_test"):
-        pass  # no extra params needed
+        pass
 
     notes = input("\n  Notes (Enter to skip): ").strip() or None
     cfg["notes"] = notes
@@ -166,11 +253,11 @@ def create_session(conn, cfg):
             """
             INSERT INTO sessions (
                 exercise_type, grip_type, edge_depth_mm, target_weight_kg,
-                on_seconds, off_seconds, target_reps, target_sets,
+                on_seconds, off_seconds, target_reps, target_sets, set_rest_s,
                 target_duration_s, target_pull_reps, notes
             ) VALUES (
                 %(exercise_type)s, %(grip_type)s, %(edge_depth_mm)s, %(target_weight_kg)s,
-                %(on_seconds)s, %(off_seconds)s, %(target_reps)s, %(target_sets)s,
+                %(on_seconds)s, %(off_seconds)s, %(target_reps)s, %(target_sets)s, %(set_rest_s)s,
                 %(target_duration_s)s, %(target_pull_reps)s, %(notes)s
             ) RETURNING id
             """,
@@ -222,6 +309,65 @@ def insert_measurements_batch(conn, session_id, samples):
     conn.commit()
 
 
+# ── Exercise descriptions ─────────────────────────────────────────────────────
+
+EXERCISE_DESCRIPTIONS = {
+    "repeaters": (
+        "REPEATERS\n"
+        "  Hang for {on_s}s, rest {off_s}s — repeat for {reps} reps per set.\n"
+        "  Complete {sets} sets with {set_rest_s}s rest between sets.\n"
+        "  Focus on consistent force output across all reps."
+    ),
+    "max_hang": (
+        "MAX HANG\n"
+        "  Hang as hard as you can for {on_s}s, rest {off_s}s — repeat for {reps} reps per set.\n"
+        "  Complete {sets} sets with {set_rest_s}s rest between sets.\n"
+        "  Aim for maximum force — pull through the entire hang."
+    ),
+    "recruitment_pull": (
+        "RECRUITMENT PULL\n"
+        "  Pull as hard and fast as possible for 1-2 seconds — {pulls} total pulls.\n"
+        "  Rest fully between each pull (2-3 mins).\n"
+        "  Focus on explosive onset — maximum RFD, not sustained force."
+    ),
+    "mvc_test": (
+        "MVC BASELINE TEST\n"
+        "  Build to maximum force and hold for 3-5 seconds.\n"
+        "  This is your strength ceiling — pull as hard as you can.\n"
+        "  Press Ctrl+C when done."
+    ),
+    "rfd_test": (
+        "RFD BASELINE TEST\n"
+        "  Pull as explosively as possible — peak force in the shortest time.\n"
+        "  Hold briefly at peak, then release.\n"
+        "  Press Ctrl+C when done."
+    ),
+    "min_edge": (
+        "MIN EDGE\n"
+        "  Hang on the smallest edge you can for a set duration.\n"
+        "  Press Ctrl+C when done."
+    ),
+}
+
+
+def print_exercise_brief(cfg):
+    ex   = cfg["exercise_type"]
+    tmpl = EXERCISE_DESCRIPTIONS.get(ex, "Press Ctrl+C to stop when done.")
+    desc = tmpl.format(
+        on_s     = cfg.get("on_seconds") or "?",
+        off_s    = cfg.get("off_seconds") or "?",
+        reps     = cfg.get("target_reps") or "?",
+        sets     = cfg.get("target_sets") or "?",
+        set_rest_s = cfg.get("set_rest_s") or 180,
+        pulls    = cfg.get("target_pull_reps") or "?",
+    )
+    print("\n──────────────────────────────────────────────────────────────")
+    for line in desc.splitlines():
+        print(f"  {line}")
+    print("──────────────────────────────────────────────────────────────")
+    input("\n  Press Enter to start...\n")
+
+
 # ── BLE ───────────────────────────────────────────────────────────────────────
 
 async def find_progressor():
@@ -237,10 +383,11 @@ async def find_progressor():
 async def run_session(cfg):
     conn = get_db_connection()
 
-    is_baseline = cfg["exercise_type"] in ("mvc_test", "rfd_test")
+    is_baseline  = cfg["exercise_type"] in ("mvc_test", "rfd_test")
+    use_timer    = cfg["exercise_type"] in ("repeaters", "max_hang")
 
     if is_baseline:
-        session_id = None  # baselines don't create a session row
+        session_id = None
     else:
         session_id = create_session(conn, cfg)
         print(f"Session {session_id} started  [{cfg['exercise_type']} | {cfg['grip_type']} | {cfg['edge_depth_mm']}mm]")
@@ -256,15 +403,14 @@ async def run_session(cfg):
     signal.signal(signal.SIGINT, on_signal)
 
     measurement_count = 0
-    all_samples = []       # (force_kg, device_ts_us)
-    peak_force  = 0.0
-    force_history = []     # for RFD calculation
+    all_samples   = []
+    peak_force    = 0.0
+    force_history = []
 
     def handle_notification(sender, data: bytearray):
         nonlocal measurement_count, peak_force
 
-        response_code = data[0]
-        if response_code != RESP_WEIGHT_MEASUREMENT:
+        if data[0] != RESP_WEIGHT_MEASUREMENT:
             return
 
         num_samples = (len(data) - 2) // 8
@@ -280,22 +426,25 @@ async def run_session(cfg):
 
         all_samples.extend(batch)
 
-        if not is_baseline and measurement_count % 50 == 0:
+        if measurement_count % 50 == 0:
             print(f"  {force_kg:.2f} kg  (peak {peak_force:.2f} kg)  sample {measurement_count}", end="\r")
-
-        if is_baseline and measurement_count % 50 == 0:
-            print(f"  {force_kg:.2f} kg  (peak {peak_force:.2f} kg)", end="\r")
 
     async with BleakClient(address) as client:
         print("Connected. Taring scale...")
         await client.write_gatt_char(WRITE_CHAR_UUID, CMD_TARE_SCALE, response=False)
         await asyncio.sleep(0.5)
 
-        print("Starting measurement stream. Press Ctrl+C to stop.\n")
+        print_exercise_brief(cfg)
+        print("Recording... Press Ctrl+C to stop.\n")
         await client.start_notify(NOTIFY_CHAR_UUID, handle_notification)
         await client.write_gatt_char(WRITE_CHAR_UUID, CMD_START_WEIGHT_MEAS, response=False)
 
-        await stop_event.wait()
+        if use_timer:
+            timer_task = asyncio.create_task(run_timer(cfg, stop_event))
+            await stop_event.wait()
+            timer_task.cancel()
+        else:
+            await stop_event.wait()
 
         await client.write_gatt_char(WRITE_CHAR_UUID, CMD_STOP_WEIGHT_MEAS, response=False)
         await client.stop_notify(NOTIFY_CHAR_UUID)
@@ -303,7 +452,6 @@ async def run_session(cfg):
     if is_baseline:
         rfd = None
         if cfg["exercise_type"] == "rfd_test" and len(force_history) > 1:
-            # RFD = max rate of force increase over any 0.1s window
             rfd = _calculate_rfd(force_history)
         save_baseline(conn, cfg, peak_force, rfd_kg_per_s=rfd)
         if cfg["exercise_type"] == "mvc_test":
@@ -327,7 +475,7 @@ def _calculate_rfd(force_history):
         f0, t0 = force_history[i]
         for j in range(i + 1, n):
             f1, t1 = force_history[j]
-            dt_s = (t1 - t0) / 1_000_000  # microseconds → seconds
+            dt_s = (t1 - t0) / 1_000_000
             if dt_s <= 0:
                 continue
             if dt_s > 0.1:

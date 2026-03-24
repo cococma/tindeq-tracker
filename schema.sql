@@ -8,11 +8,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     grip_type        TEXT NOT NULL DEFAULT 'half_crimp',
     edge_depth_mm    INTEGER NOT NULL DEFAULT 20,
     target_weight_kg REAL NOT NULL DEFAULT 0,
-    -- Repeaters only
-    on_seconds       INTEGER,
-    off_seconds      INTEGER,
-    target_reps      INTEGER,
-    target_sets      INTEGER,
+    -- Repeaters / Max hang
+    on_seconds        INTEGER,
+    off_seconds       INTEGER,
+    target_reps       INTEGER,
+    target_sets       INTEGER,
+    set_rest_s        INTEGER DEFAULT 180,
     -- Max hang only
     target_duration_s INTEGER,
     -- Recruitment pull only
