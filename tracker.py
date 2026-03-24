@@ -342,10 +342,10 @@ EXERCISE_DESCRIPTIONS = {
         "  Hold briefly at peak, then release.\n"
         "  Press Ctrl+C when done."
     ),
-    "min_edge": (
-        "MIN EDGE\n"
-        "  Hang on the smallest edge you can for a set duration.\n"
-        "  Press Ctrl+C when done."
+    "force_test": (
+        "FORCE TEST\n"
+        "  Pull however you like — no protocol, no timer.\n"
+        "  Nothing is saved. Press Ctrl+C when done."
     ),
 }
 
