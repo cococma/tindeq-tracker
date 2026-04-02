@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     target_duration_s INTEGER,
     -- Recruitment pull only
     target_pull_reps  INTEGER,
+    hand             TEXT NOT NULL DEFAULT 'right',
     notes            TEXT
 );
 
@@ -40,8 +41,13 @@ CREATE TABLE IF NOT EXISTS baseline_tests (
     -- RFD
     rfd_kg_per_s  REAL,
     peak_force_rfd_kg REAL,       -- peak force during RFD test
+    hand          TEXT NOT NULL DEFAULT 'right',
     notes         TEXT
 );
+
+-- Migration: run these if upgrading an existing database
+-- ALTER TABLE sessions       ADD COLUMN IF NOT EXISTS hand TEXT NOT NULL DEFAULT 'right';
+-- ALTER TABLE baseline_tests ADD COLUMN IF NOT EXISTS hand TEXT NOT NULL DEFAULT 'right';
 
 CREATE INDEX IF NOT EXISTS idx_measurements_session ON measurements(session_id);
 CREATE INDEX IF NOT EXISTS idx_measurements_time    ON measurements(recorded_at);

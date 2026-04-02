@@ -12,7 +12,7 @@ from typing import Optional
 from textual.app import App, ComposeResult
 from textual.screen import Screen
 from textual.widget import Widget
-from textual.widgets import Static, Button, Input, Rule
+from textual.widgets import Static, Button, Input, Rule, Checkbox
 from textual.containers import Vertical, Horizontal, Container, VerticalScroll
 from textual.reactive import reactive
 from textual import work
@@ -88,8 +88,9 @@ Screen {
 }
 
 .status {
-    color: #7a6040;
+    color: #c8a84b;
     text-align: center;
+    height: 1;
 }
 
 Button {
@@ -293,6 +294,12 @@ class SetupScreen(Screen):
         ("Pinch",       "pinch"),
     ]
 
+    HAND_OPTIONS = [
+        ("Right", "right"),
+        ("Left",  "left"),
+        ("Both",  "both"),
+    ]
+
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="setup_scroll"):
             yield Static(
@@ -309,6 +316,10 @@ class SetupScreen(Screen):
             with Horizontal(classes="form-row"):
                 yield Static("GRIP", classes="form-label")
                 yield CycleSelect(self.GRIP_OPTIONS, initial="half_crimp", id="grip")
+
+            with Horizontal(classes="form-row"):
+                yield Static("HAND", classes="form-label")
+                yield CycleSelect(self.HAND_OPTIONS, initial="right", id="hand")
 
             with Horizontal(classes="form-row"):
                 yield Static("EDGE DEPTH", classes="form-label")
@@ -337,6 +348,7 @@ class SetupScreen(Screen):
                 yield Static("kg", classes="form-unit")
 
             yield Rule()
+            yield Checkbox("Don't record this session", id="no_record")
             yield Button("▶  START SESSION", id="start")
 
     def on_mount(self) -> None:
@@ -368,6 +380,7 @@ class SetupScreen(Screen):
 
         ex   = self.query_one("#exercise", CycleSelect).value
         grip = self.query_one("#grip", CycleSelect).value
+        hand = self.query_one("#hand", CycleSelect).value
         edge = int(self.query_one("#edge", Input).value or 20)
 
         on_s = off_s = sets = reps = set_rest = None
@@ -390,9 +403,13 @@ class SetupScreen(Screen):
             except ValueError:
                 target_kg = 0.0
 
+        next_hand = "left" if hand == "both" else None
+        no_record = self.query_one("#no_record", Checkbox).value
+
         cfg = {
             "exercise_type":     ex,
             "grip_type":         grip,
+            "hand":              "right" if hand == "both" else hand,
             "edge_depth_mm":     edge,
             "target_weight_kg":  target_kg,
             "on_seconds":        on_s,
@@ -402,10 +419,11 @@ class SetupScreen(Screen):
             "set_rest_s":        set_rest or 180,
             "target_duration_s": None,
             "target_pull_reps":  None,
+            "no_record":         no_record,
             "notes":             None,
         }
 
-        self.app.push_screen(SessionScreen(cfg))
+        self.app.push_screen(SessionScreen(cfg, next_hand=next_hand))
 
 
 # ── Session screen ────────────────────────────────────────────────────────────
@@ -416,10 +434,13 @@ class SessionScreen(Screen):
     peak          = reactive(0.0)
     status_msg    = reactive("Scanning for Progressor...")
 
-    def __init__(self, cfg: dict) -> None:
+    def __init__(self, cfg: dict, next_hand: Optional[str] = None) -> None:
         super().__init__()
-        self.cfg          = cfg
-        self.stop_event   = asyncio.Event()
+        self.cfg            = cfg
+        self._next_hand     = next_hand
+        self._wait_to_start = False
+        self.stop_event     = asyncio.Event()
+        self._status_widget: Optional[Static] = None
         self._latest      = [0.0, 0]   # [force_kg, device_ts_us]
         self._all_samples: list        = []
         self._force_history: list      = []
@@ -432,10 +453,11 @@ class SessionScreen(Screen):
         ex   = self.cfg["exercise_type"].replace("_", " ").upper()
         grip = self.cfg["grip_type"].replace("_", " ").title()
         edge = self.cfg["edge_depth_mm"]
+        hand = self.cfg.get("hand", "right").title()
 
         with Vertical(classes="panel"):
             yield Static(
-                f"  {ex}  ·  {grip}  ·  {edge}mm",
+                f"  {ex}  ·  {grip}  ·  {edge}mm  ·  {hand}",
                 classes="title", id="header"
             )
             yield Rule()
@@ -443,7 +465,8 @@ class SessionScreen(Screen):
             yield Rule()
             yield PhaseDisplay(id="phase_display")
             yield Rule()
-            yield Static("", id="status", classes="status")
+            self._status_widget = Static("", id="status", classes="status")
+            yield self._status_widget
             yield Button("■  STOP SESSION", id="stop")
 
     def on_mount(self) -> None:
@@ -452,17 +475,52 @@ class SessionScreen(Screen):
         pd = self.query_one("#phase_display", PhaseDisplay)
         pd.total_sets = self.cfg.get("target_sets") or 0
         pd.total_reps = self.cfg.get("target_reps") or 0
+        self._set_status("Scanning for Progressor...")
         self.run_session()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "stop":
-            self.stop_event.set()
-            self.query_one("#stop", Button).disabled = True
+            if self._wait_to_start:
+                self._wait_to_start = False
+                self.query_one("#stop", Button).label = "■  STOP SESSION"
+                self.run_session()
+            elif not self.stop_event.is_set():
+                self.stop_event.set()
+                self.query_one("#stop", Button).disabled = True
+            elif self._next_hand:
+                self._begin_next_hand()
+            else:
+                self.app.pop_screen()
+
+    def _begin_next_hand(self) -> None:
+        """Reset this screen in-place for the next hand."""
+        self.cfg = {**self.cfg, "hand": self._next_hand}
+        self._next_hand = None
+        self.stop_event.clear()
+        self._all_samples    = []
+        self._force_history  = []
+        self._measurement_count = 0
+        self._peak           = 0.0
+        self._session_id     = None
+        self._conn           = None
+
+        hand = self.cfg["hand"].title()
+        self.query_one("#header", Static).update(
+            f"  {self.cfg['exercise_type'].replace('_', ' ').upper()}"
+            f"  ·  {self.cfg['grip_type'].replace('_', ' ').title()}"
+            f"  ·  {self.cfg['edge_depth_mm']}mm  ·  {hand}"
+        )
+        self.query_one("#force_bar", ForceBar).peak = 0.0
+        self._set_status(f"Switch to {hand} hand, then press START")
+        btn = self.query_one("#stop", Button)
+        btn.label    = "▶  START SESSION"
+        btn.disabled = False
+        self._wait_to_start = True
 
     @work(exclusive=True)
     async def run_session(self) -> None:
         is_baseline = self.cfg["exercise_type"] in ("mvc_test", "rfd_test")
-        no_record   = self.cfg["exercise_type"] == "force_test"
+        no_record   = self.cfg["exercise_type"] == "force_test" or self.cfg.get("no_record", False)
         use_timer   = self.cfg["exercise_type"] in ("repeaters", "max_hang")
 
         # ── DB setup ──────────────────────────────────────────────────────────
@@ -538,9 +596,9 @@ class SessionScreen(Screen):
         self._conn.close()
         self._set_status(msg)
 
-        # Re-enable stop button as "back" button
+        # Re-enable stop button as "back" or "next hand" button
         btn = self.query_one("#stop", Button)
-        btn.label = "◀  BACK TO SETUP"
+        btn.label = f"▶  START {self._next_hand.upper()} HAND" if self._next_hand else "◀  BACK TO SETUP"
         btn.disabled = False
 
     async def _ui_refresh_loop(self) -> None:
@@ -624,10 +682,8 @@ class SessionScreen(Screen):
         self.stop_event.set()
 
     def _set_status(self, msg: str) -> None:
-        try:
-            self.query_one("#status", Static).update(msg)
-        except Exception:
-            pass
+        if self._status_widget is not None:
+            self._status_widget.update(msg)
 
 
 # ── App ───────────────────────────────────────────────────────────────────────

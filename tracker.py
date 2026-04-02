@@ -174,6 +174,12 @@ GRIP_OPTIONS = [
     ("pinch",      "Pinch"),
 ]
 
+HAND_OPTIONS = [
+    ("right", "Right hand"),
+    ("left",  "Left hand"),
+    ("both",  "Both hands (two sets, one per hand)"),
+]
+
 # ── Session config ────────────────────────────────────────────────────────────
 
 def get_session_config():
@@ -182,6 +188,7 @@ def get_session_config():
 
     exercise_type = prompt_choice("Exercise", EXERCISE_OPTIONS, default_index=0)
     grip_type     = prompt_choice("Grip", GRIP_OPTIONS, default_index=0)
+    hand          = prompt_choice("Hand", HAND_OPTIONS, default_index=0)
 
     print()
     edge_depth_mm = prompt_int("Edge depth (mm)", 20)
@@ -189,6 +196,7 @@ def get_session_config():
     cfg = {
         "exercise_type":     exercise_type,
         "grip_type":         grip_type,
+        "hand":              hand,
         "edge_depth_mm":     edge_depth_mm,
         "target_weight_kg":  0,
         "on_seconds":        None,
@@ -254,11 +262,11 @@ def create_session(conn, cfg):
             INSERT INTO sessions (
                 exercise_type, grip_type, edge_depth_mm, target_weight_kg,
                 on_seconds, off_seconds, target_reps, target_sets, set_rest_s,
-                target_duration_s, target_pull_reps, notes
+                target_duration_s, target_pull_reps, hand, notes
             ) VALUES (
                 %(exercise_type)s, %(grip_type)s, %(edge_depth_mm)s, %(target_weight_kg)s,
                 %(on_seconds)s, %(off_seconds)s, %(target_reps)s, %(target_sets)s, %(set_rest_s)s,
-                %(target_duration_s)s, %(target_pull_reps)s, %(notes)s
+                %(target_duration_s)s, %(target_pull_reps)s, %(hand)s, %(notes)s
             ) RETURNING id
             """,
             cfg
@@ -280,8 +288,8 @@ def save_baseline(conn, cfg, peak_force_kg, rfd_kg_per_s=None):
             """
             INSERT INTO baseline_tests (
                 test_type, grip_type, edge_depth_mm,
-                peak_force_kg, rfd_kg_per_s, peak_force_rfd_kg, notes
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                peak_force_kg, rfd_kg_per_s, peak_force_rfd_kg, hand, notes
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 cfg["exercise_type"],
@@ -290,6 +298,7 @@ def save_baseline(conn, cfg, peak_force_kg, rfd_kg_per_s=None):
                 peak_force_kg,
                 rfd_kg_per_s,
                 peak_force_kg if rfd_kg_per_s else None,
+                cfg.get("hand", "right"),
                 cfg.get("notes"),
             )
         )
@@ -390,7 +399,7 @@ async def run_session(cfg):
         session_id = None
     else:
         session_id = create_session(conn, cfg)
-        print(f"Session {session_id} started  [{cfg['exercise_type']} | {cfg['grip_type']} | {cfg['edge_depth_mm']}mm]")
+        print(f"Session {session_id} started  [{cfg['exercise_type']} | {cfg['grip_type']} | {cfg['edge_depth_mm']}mm | {cfg['hand']} hand]")
 
     address = await find_progressor()
 
@@ -490,4 +499,12 @@ def _calculate_rfd(force_history):
 
 if __name__ == "__main__":
     cfg = get_session_config()
-    asyncio.run(run_session(cfg))
+
+    if cfg["hand"] == "both":
+        for i, hand in enumerate(["right", "left"]):
+            hand_cfg = {**cfg, "hand": hand}
+            if i == 1:
+                input(f"\n  Switch to LEFT hand. Press Enter when ready...\n")
+            asyncio.run(run_session(hand_cfg))
+    else:
+        asyncio.run(run_session(cfg))
