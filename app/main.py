@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.api import pages, tindeq
+from app.api import capture, pages, tindeq
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -17,3 +17,4 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 
 app.include_router(pages.router)
 app.include_router(tindeq.router, prefix="/api")
+app.include_router(capture.router, prefix="/api")

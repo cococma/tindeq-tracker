@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Capture · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Capture</h1>
+
+<!-- ── Setup ── -->
+<div id="setup" class="panel">
+    <div class="capture-form">
+        <div class="field">
+            <label for="exercise">Exercise</label>
+            <select id="exercise">
+                {% for value, label in exercise_options %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="grip">Grip</label>
+            <select id="grip">
+                {% for value, label in grip_options %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="hand">Hand</label>
+            <select id="hand">
+                {% for value, label in hand_options %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="edge">Edge depth (mm)</label>
+            <input id="edge" type="number" value="20" min="4" max="60">
+        </div>
+        <div class="field timer-only">
+            <label for="onoff">On / off (s)</label>
+            <input id="onoff" value="7/3">
+        </div>
+        <div class="field timer-only">
+            <label for="setsreps">Sets / reps</label>
+            <input id="setsreps" value="6/6">
+        </div>
+        <div class="field timer-only">
+            <label for="setrest">Set rest (s)</label>
+            <input id="setrest" type="number" value="180">
+        </div>
+        <div class="field repeaters-only">
+            <label for="target">Target force (kg)</label>
+            <input id="target" type="number" value="0" step="0.5">
+        </div>
+        <div class="field wide">
+            <label for="notes">Notes</label>
+            <input id="notes" placeholder="optional">
+        </div>
+    </div>
+    <div class="capture-actions">
+        <label class="check"><input type="checkbox" id="no_record"> Don't record this session</label>
+        <button id="start" class="primary">▶&nbsp; START SESSION</button>
+    </div>
+</div>
+
+<!-- ── Live ── -->
+<div id="live" class="panel" hidden>
+    <div id="live-header" class="muted"></div>
+    <div class="live-grid">
+        <div class="force-readout">
+            <div class="label">FORCE</div>
+            <div id="force-now" class="force-value">0.0<span class="unit"> kg</span></div>
+            <div class="label">PEAK</div>
+            <div id="force-peak" class="peak-value">0.0<span class="unit"> kg</span></div>
+        </div>
+        <div class="phase-readout">
+            <div id="phase" class="phase-value">READY</div>
+            <div id="countdown" class="countdown-value"></div>
+            <div id="progress" class="muted"></div>
+        </div>
+    </div>
+    <div id="live-chart" class="chart"></div>
+    <div id="live-status" class="muted"></div>
+    <div class="capture-actions">
+        <button id="stop">■&nbsp; STOP SESSION</button>
+    </div>
+</div>
+
+<!-- ── Result ── -->
+<div id="result" class="panel" hidden>
+    <div id="result-message"></div>
+    <div class="capture-actions">
+        <a id="result-link" class="btn" hidden>View session</a>
+        <button id="next-hand" hidden></button>
+        <button id="again">◀&nbsp; NEW SESSION</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.EXERCISE_DEFAULTS = {{ exercise_defaults_json | safe }};
+</script>
+<script src="/static/capture.js"></script>
+{% endblock %}

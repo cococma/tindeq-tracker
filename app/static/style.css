@@ -154,6 +154,47 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 
 label { color: var(--muted); font-size: 0.8rem; }
 
+/* ── Capture page ── */
+.capture-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.9rem;
+}
+.capture-form .field { display: flex; flex-direction: column; gap: 0.25rem; }
+.capture-form .field.wide { grid-column: 1 / -1; }
+.capture-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+}
+.capture-actions .check { display: flex; align-items: center; gap: 0.5rem; }
+button.primary { border-color: var(--green); color: var(--green); }
+button.primary:hover { background: var(--green); color: var(--bg); }
+
+.live-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+.force-readout .label, .phase-readout .label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+}
+.force-value {
+    color: var(--ink-bright);
+    font-size: 3.2rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+.force-value .unit, .peak-value .unit { color: var(--muted); font-size: 1rem; font-weight: 400; }
+.peak-value { color: var(--green); font-size: 1.6rem; font-weight: 700; }
+.phase-readout { text-align: right; }
+.phase-value { font-size: 2.2rem; font-weight: 700; letter-spacing: 0.06em; }
+.countdown-value { color: var(--amber); font-size: 2.2rem; font-weight: 700; min-height: 2.5rem; }
+
 .badge {
     display: inline-block;
     padding: 0.1rem 0.5rem;
