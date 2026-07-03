@@ -169,3 +169,30 @@ def climbing_page(request: Request):
 @router.get("/api/climbing/volume")
 def climbing_volume(conn=Depends(db)):
     return {"climbs": repo.climb_volume(conn)}
+
+
+@router.get("/load", response_class=HTMLResponse)
+def load_page(request: Request):
+    return render(request, "load.html", active="load")
+
+
+@router.get("/api/load/summary")
+def load_summary(days: int = 84, conn=Depends(db)):
+    from psycopg2.extras import RealDictCursor
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            WITH acts AS (
+                SELECT started_at::date AS d, 'hangboard' AS kind FROM sessions
+                  WHERE started_at >= NOW() - make_interval(days => %s)
+                UNION ALL
+                SELECT entry_date, entry_type FROM journal_entries
+                  WHERE entry_date >= CURRENT_DATE - %s AND entry_type IN ('climbing', 'workout')
+            )
+            SELECT date_trunc('week', d)::date AS week, kind, COUNT(*) AS n
+            FROM acts GROUP BY 1, 2 ORDER BY 1
+            """,
+            (days, days),
+        )
+        weekly = cur.fetchall()
+    return {"weekly": weekly, "wellness": repo.list_wellness(conn, days=days)}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Load · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Training Load</h1>
+
+<h2>Sessions per week</h2>
+<div id="weekly" class="chart"></div>
+
+<h2>Wellness strip</h2>
+<p class="muted">Darker = more soreness / fatigue. Aligned by day, last 12 weeks.</p>
+<div id="wellness" class="chart" style="min-height:220px"></div>
+
+<h2>Sleep</h2>
+<div id="sleep" class="chart" style="min-height:260px"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const KIND_COLORS = { hangboard: "#6f8f2d", climbing: "#3f83cf", workout: "#b58a2f" };
+
+(async () => {
+    const data = await (await fetch("/api/load/summary")).json();
+
+    // ── Weekly stacked bars ──
+    const weeklyEl = document.getElementById("weekly");
+    if (!data.weekly.length) {
+        TJ.empty(weeklyEl, "No training logged yet.");
+    } else {
+        const weeks = [...new Set(data.weekly.map(r => r.week))].sort();
+        const kinds = ["hangboard", "climbing", "workout"];
+        const traces = kinds.map(kind => ({
+            type: "bar", name: kind, x: weeks,
+            y: weeks.map(w => (data.weekly.find(r => r.week === w && r.kind === kind) || {}).n || 0),
+            marker: { color: KIND_COLORS[kind], line: { color: TJ.surface, width: 2 } },
+            hovertemplate: `${kind}: %{y}<extra></extra>`,
+        }));
+        Plotly.newPlot(weeklyEl, traces, TJ.layout({
+            barmode: "stack",
+            xaxis: TJ.axis({ type: "category", title: "week" }),
+            yaxis: TJ.axis({ title: "sessions" }),
+        }), TJ.config);
+    }
+
+    // ── Wellness heat-strip (soreness + fatigue, 1–5 sequential) ──
+    const wellEl = document.getElementById("wellness");
+    const sleepEl = document.getElementById("sleep");
+    if (!data.wellness.length) {
+        TJ.empty(wellEl, "No wellness check-ins yet — log one on the Journal page.");
+        TJ.empty(sleepEl, "No sleep data yet.");
+        return;
+    }
+    const days = data.wellness.map(w => w.log_date);
+    const ramp = [[0, "#3a2e14"], [1, "#c8703a"]];  // dark surface tone -> hot amber
+    Plotly.newPlot(wellEl, [{
+        type: "heatmap",
+        x: days,
+        y: ["fatigue", "soreness"],
+        z: [data.wellness.map(w => w.fatigue), data.wellness.map(w => w.soreness)],
+        zmin: 1, zmax: 5,
+        colorscale: ramp,
+        xgap: 2, ygap: 2,
+        colorbar: { tickvals: [1, 3, 5], outlinewidth: 0, tickfont: { color: TJ.muted }, thickness: 12 },
+        hovertemplate: "%{y} %{z}/5 · %{x}<extra></extra>",
+    }], TJ.layout({
+        xaxis: TJ.axis({ type: "date", tickformat: "%b %d" }),
+        yaxis: TJ.axis(),
+        margin: { l: 80, r: 20, t: 10, b: 40 },
+    }), TJ.config);
+
+    // ── Sleep hours ──
+    const withSleep = data.wellness.filter(w => w.sleep_hours != null);
+    if (!withSleep.length) { TJ.empty(sleepEl, "No sleep data yet."); return; }
+    Plotly.newPlot(sleepEl, [{
+        x: withSleep.map(w => w.log_date),
+        y: withSleep.map(w => w.sleep_hours),
+        type: "bar",
+        marker: { color: "#3f83cf", line: { color: TJ.surface, width: 2 } },
+        hovertemplate: "%{y}h · %{x}<extra></extra>",
+    }], TJ.layout({
+        xaxis: TJ.axis({ type: "date", tickformat: "%b %d" }),
+        yaxis: TJ.axis({ title: "hours" }),
+        showlegend: false,
+        margin: { l: 55, r: 20, t: 10, b: 40 },
+    }), TJ.config);
+})();
+</script>
+{% endblock %}
