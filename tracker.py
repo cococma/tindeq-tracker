@@ -7,26 +7,20 @@ import asyncio
 import struct
 import signal
 import subprocess
-from datetime import datetime
 
-import psycopg2
 from bleak import BleakScanner, BleakClient
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
-
-# ── Tindeq Progressor BLE constants ──────────────────────────────────────────
-
-PROGRESSOR_SERVICE_UUID = "7e4e1701-1ea6-40c9-9dcc-13d34ffead57"
-WRITE_CHAR_UUID         = "7e4e1703-1ea6-40c9-9dcc-13d34ffead57"
-NOTIFY_CHAR_UUID        = "7e4e1702-1ea6-40c9-9dcc-13d34ffead57"
-
-CMD_TARE_SCALE          = bytes([0x64])
-CMD_START_WEIGHT_MEAS   = bytes([0x65])
-CMD_STOP_WEIGHT_MEAS    = bytes([0x66])
-
-RESP_WEIGHT_MEASUREMENT = 0x01
+from app.constants import EXERCISE_OPTIONS, GRIP_OPTIONS, HAND_OPTIONS
+from app.db import get_db_connection
+from app.repos.tindeq import (
+    create_session, close_session, save_baseline, insert_measurements_batch,
+)
+from app.tindeq.analysis import calculate_rfd as _calculate_rfd
+from app.tindeq.protocol import (
+    PROGRESSOR_SERVICE_UUID, WRITE_CHAR_UUID, NOTIFY_CHAR_UUID,
+    CMD_TARE_SCALE, CMD_START_WEIGHT_MEAS, CMD_STOP_WEIGHT_MEAS,
+    RESP_WEIGHT_MEASUREMENT,
+)
 
 # ── Audio ─────────────────────────────────────────────────────────────────────
 
@@ -158,28 +152,6 @@ def prompt_choice(label, options, default_index=0):
         print(f"    Enter a number between 1 and {len(options)}.")
 
 
-EXERCISE_OPTIONS = [
-    ("repeaters",         "Repeaters"),
-    ("max_hang",          "Max Hang"),
-    ("recruitment_pull",  "Recruitment Pull"),
-    ("mvc_test",          "MVC Baseline Test"),
-    ("rfd_test",          "RFD Baseline Test"),
-    ("min_edge",          "Min Edge"),
-]
-
-GRIP_OPTIONS = [
-    ("half_crimp", "Half Crimp"),
-    ("full_crimp", "Full Crimp"),
-    ("open_hand",  "Open Hand"),
-    ("pinch",      "Pinch"),
-]
-
-HAND_OPTIONS = [
-    ("right", "Right hand"),
-    ("left",  "Left hand"),
-    ("both",  "Both hands (two sets, one per hand)"),
-]
-
 # ── Session config ────────────────────────────────────────────────────────────
 
 def get_session_config():
@@ -241,81 +213,6 @@ def get_session_config():
 
     print("──────────────────────────────────────────────────────────────\n")
     return cfg
-
-
-# ── Database ──────────────────────────────────────────────────────────────────
-
-def get_db_connection():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", 5432)),
-        dbname=os.getenv("DB_NAME", "tindeq"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", ""),
-    )
-
-
-def create_session(conn, cfg):
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO sessions (
-                exercise_type, grip_type, edge_depth_mm, target_weight_kg,
-                on_seconds, off_seconds, target_reps, target_sets, set_rest_s,
-                target_duration_s, target_pull_reps, hand, notes
-            ) VALUES (
-                %(exercise_type)s, %(grip_type)s, %(edge_depth_mm)s, %(target_weight_kg)s,
-                %(on_seconds)s, %(off_seconds)s, %(target_reps)s, %(target_sets)s, %(set_rest_s)s,
-                %(target_duration_s)s, %(target_pull_reps)s, %(hand)s, %(notes)s
-            ) RETURNING id
-            """,
-            cfg
-        )
-        session_id = cur.fetchone()[0]
-    conn.commit()
-    return session_id
-
-
-def close_session(conn, session_id):
-    with conn.cursor() as cur:
-        cur.execute("UPDATE sessions SET ended_at = NOW() WHERE id = %s", (session_id,))
-    conn.commit()
-
-
-def save_baseline(conn, cfg, peak_force_kg, rfd_kg_per_s=None):
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO baseline_tests (
-                test_type, grip_type, edge_depth_mm,
-                peak_force_kg, rfd_kg_per_s, peak_force_rfd_kg, hand, notes
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                cfg["exercise_type"],
-                cfg["grip_type"],
-                cfg["edge_depth_mm"],
-                peak_force_kg,
-                rfd_kg_per_s,
-                peak_force_kg if rfd_kg_per_s else None,
-                cfg.get("hand", "right"),
-                cfg.get("notes"),
-            )
-        )
-    conn.commit()
-
-
-def insert_measurements_batch(conn, session_id, samples):
-    """Insert a batch of (force_kg, device_ts_us) tuples."""
-    with conn.cursor() as cur:
-        cur.executemany(
-            """
-            INSERT INTO measurements (session_id, recorded_at, force_kg, device_ts_us)
-            VALUES (%s, NOW(), %s, %s)
-            """,
-            [(session_id, force, ts) for force, ts in samples]
-        )
-    conn.commit()
 
 
 # ── Exercise descriptions ─────────────────────────────────────────────────────
@@ -474,25 +371,6 @@ async def run_session(cfg):
         print(f"\nSession {session_id} saved — {measurement_count} measurements  |  Peak: {peak_force:.2f} kg")
 
     conn.close()
-
-
-def _calculate_rfd(force_history):
-    """Calculate max RFD (kg/s) over any 100ms window in the recording."""
-    best_rfd = 0.0
-    n = len(force_history)
-    for i in range(n):
-        f0, t0 = force_history[i]
-        for j in range(i + 1, n):
-            f1, t1 = force_history[j]
-            dt_s = (t1 - t0) / 1_000_000
-            if dt_s <= 0:
-                continue
-            if dt_s > 0.1:
-                break
-            rfd = (f1 - f0) / dt_s
-            if rfd > best_rfd:
-                best_rfd = rfd
-    return best_rfd
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

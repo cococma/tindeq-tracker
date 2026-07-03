@@ -21,12 +21,15 @@ from rich.text import Text
 
 from bleak import BleakScanner, BleakClient
 
-from tracker import (
+from app.db import get_db_connection
+from app.repos.tindeq import (
+    create_session, close_session, save_baseline, insert_measurements_batch,
+)
+from app.tindeq.analysis import calculate_rfd as _calculate_rfd
+from app.tindeq.protocol import (
     PROGRESSOR_SERVICE_UUID, WRITE_CHAR_UUID, NOTIFY_CHAR_UUID,
     CMD_TARE_SCALE, CMD_START_WEIGHT_MEAS, CMD_STOP_WEIGHT_MEAS,
     RESP_WEIGHT_MEASUREMENT,
-    get_db_connection, create_session, close_session,
-    insert_measurements_batch, save_baseline, _calculate_rfd,
 )
 
 
