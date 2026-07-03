@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if entry else "New" }} entry · TrainingJournal{% endblock %}
+{% block content %}
+<h1>{{ "Edit entry" if entry else "New entry" }}</h1>
+
+<form method="post" class="panel">
+    <div class="capture-form">
+        <div class="field">
+            <label for="entry_type">Type</label>
+            <select id="entry_type" name="entry_type">
+                {% for t in ["climbing", "workout", "note"] %}
+                <option value="{{ t }}" {{ "selected" if entry and entry.entry_type == t }}>{{ t|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="entry_date">Date</label>
+            <input id="entry_date" name="entry_date" type="date"
+                   value="{{ entry.entry_date.isoformat() if entry else today }}">
+        </div>
+        <div class="field wide">
+            <label for="title">Title</label>
+            <input id="title" name="title" value="{{ entry.title or '' if entry else '' }}" placeholder="optional">
+        </div>
+    </div>
+
+    <!-- ── Climbing fields ── -->
+    <div id="climbing-fields">
+        <h3>Climbing session</h3>
+        {% set cs = entry.climbing if entry and entry.climbing else None %}
+        <div class="capture-form">
+            <div class="field">
+                <label>Discipline</label>
+                <select name="discipline">
+                    {% for d in disciplines %}
+                    <option value="{{ d }}" {{ "selected" if cs and cs.discipline == d }}>{{ d.replace("_", " ") }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>Location type</label>
+                <select name="location_type">
+                    <option value="gym" {{ "selected" if cs and cs.location_type == "gym" }}>Gym</option>
+                    <option value="outdoor" {{ "selected" if cs and cs.location_type == "outdoor" }}>Outdoor</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Location</label>
+                <input name="location" value="{{ cs.location or '' if cs else '' }}" placeholder="optional">
+            </div>
+            <div class="field">
+                <label>Duration (min)</label>
+                <input name="duration_min" type="number" min="0" value="{{ cs.duration_min or '' if cs else '' }}">
+            </div>
+            <div class="field">
+                <label>Feel (1–5)</label>
+                <input name="feel_rating" type="number" min="1" max="5" value="{{ cs.feel_rating or '' if cs else '' }}">
+            </div>
+            <div class="field">
+                <label>Skin (1–5)</label>
+                <input name="skin_rating" type="number" min="1" max="5" value="{{ cs.skin_rating or '' if cs else '' }}">
+            </div>
+            <div class="field">
+                <label>RPE (1–10)</label>
+                <input name="session_rpe" type="number" min="1" max="10" value="{{ cs.session_rpe or '' if cs else '' }}">
+            </div>
+        </div>
+
+        <h3>Climbs</h3>
+        <div id="climb-rows">
+            {% if entry and entry.climbs %}
+            {% for c in entry.climbs %}
+            <div class="climb-row">
+                <input name="climb_grade" placeholder="V5 / 7a+" value="{{ c.grade }}">
+                <select name="climb_style">
+                    {% for s in climb_styles %}
+                    <option value="{{ s }}" {{ "selected" if c.style == s }}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+                <input name="climb_attempts" type="number" min="1" value="{{ c.attempts or 1 }}" title="attempts">
+                <input name="climb_name" placeholder="name (optional)" value="{{ c.name or '' }}">
+                <button type="button" class="remove-climb" title="remove">✕</button>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </div>
+        <button type="button" id="add-climb">＋ Add climb</button>
+    </div>
+
+    <!-- ── Workout fields ── -->
+    <div id="workout-fields">
+        <h3>Workout</h3>
+        {% set w = entry.workout if entry and entry.workout else None %}
+        <div class="capture-form">
+            <div class="field">
+                <label>Type</label>
+                <select name="workout_type">
+                    {% for t in workout_types %}
+                    <option value="{{ t }}" {{ "selected" if w and w.workout_type == t }}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>Duration (min)</label>
+                <input name="duration_min" type="number" min="0" value="{{ w.duration_min or '' if w else '' }}">
+            </div>
+            <div class="field">
+                <label>RPE (1–10)</label>
+                <input name="session_rpe" type="number" min="1" max="10" value="{{ w.session_rpe or '' if w else '' }}">
+            </div>
+            <div class="field wide">
+                <label>Details</label>
+                <textarea name="details_text" rows="3" placeholder="e.g. bench 3×8 @60kg, rows 3×10 @50kg">{{ w.details.text if w and w.details and w.details.text else '' }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="capture-form" style="margin-top:1rem">
+        <div class="field wide">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="3">{{ entry.notes or '' if entry else '' }}</textarea>
+        </div>
+    </div>
+
+    <div class="capture-actions">
+        <button type="submit" class="primary">Save entry</button>
+        <a class="btn" href="/journal">Cancel</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const typeSel = document.getElementById("entry_type");
+const climbing = document.getElementById("climbing-fields");
+const workout = document.getElementById("workout-fields");
+
+function setSection(el, enabled) {
+    el.hidden = !enabled;
+    // Disabled controls don't submit — prevents name collisions between sections
+    el.querySelectorAll("input, select, textarea, button").forEach(c => c.disabled = !enabled);
+}
+
+function updateType() {
+    setSection(climbing, typeSel.value === "climbing");
+    setSection(workout, typeSel.value === "workout");
+}
+typeSel.addEventListener("change", updateType);
+updateType();
+
+function climbRow() {
+    const div = document.createElement("div");
+    div.className = "climb-row";
+    div.innerHTML = `
+        <input name="climb_grade" placeholder="V5 / 7a+">
+        <select name="climb_style">
+            {% for s in climb_styles %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+        <input name="climb_attempts" type="number" min="1" value="1" title="attempts">
+        <input name="climb_name" placeholder="name (optional)">
+        <button type="button" class="remove-climb" title="remove">✕</button>`;
+    return div;
+}
+document.getElementById("add-climb").addEventListener("click", () => {
+    document.getElementById("climb-rows").appendChild(climbRow());
+});
+document.getElementById("climb-rows").addEventListener("click", (e) => {
+    if (e.target.classList.contains("remove-climb")) e.target.closest(".climb-row").remove();
+});
+</script>
+{% endblock %}
