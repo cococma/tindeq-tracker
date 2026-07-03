@@ -154,6 +154,37 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 
 label { color: var(--muted); font-size: 0.8rem; }
 
+/* ── Coach ── */
+.coach-output {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    line-height: 1.6;
+}
+.coach-output h1, .coach-output h2, .coach-output h3 { font-size: 1rem; }
+.chat-log {
+    max-height: 480px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+}
+.bubble {
+    max-width: 85%;
+    padding: 0.5rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    line-height: 1.55;
+}
+.bubble.user { align-self: flex-end; background: var(--panel-2); }
+.bubble.assistant { align-self: flex-start; background: var(--bg); }
+.bubble p:first-child { margin-top: 0; }
+.bubble p:last-child { margin-bottom: 0; }
+.rec-item { margin-top: 1rem; }
+
 /* ── Body page ── */
 .sync-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .sync-row form { display: flex; align-items: center; gap: 0.6rem; margin: 0; }
