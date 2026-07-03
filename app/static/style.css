@@ -1,0 +1,164 @@
+/* TrainingJournal — forest green / amber dark theme (carried over from the TUI) */
+
+:root {
+    --bg:        #1a1208;
+    --panel:     #221a0a;
+    --panel-2:   #2a1e0e;
+    --border:    #3d5228;
+    --ink:       #d4b896;
+    --ink-bright:#e8d9bd;
+    --muted:     #7a6040;
+    --faint:     #4a3820;
+    --green:     #8aaa3a;
+    --amber:     #c8a84b;
+    --grid:      #2e2412;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "SF Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+a { color: var(--green); text-decoration: none; }
+a:hover { color: var(--ink-bright); }
+
+/* ── Nav ── */
+nav {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+}
+nav .brand {
+    color: var(--green);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+nav a.navlink { color: var(--muted); padding: 0.25rem 0; }
+nav a.navlink:hover { color: var(--ink); }
+nav a.navlink.active {
+    color: var(--ink-bright);
+    border-bottom: 2px solid var(--green);
+}
+
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+
+h1, h2, h3 { color: var(--ink-bright); font-weight: 600; }
+h1 { font-size: 1.3rem; letter-spacing: 0.04em; }
+h2 { font-size: 1.05rem; margin-top: 2rem; }
+
+.muted { color: var(--muted); }
+
+/* ── Panels & stat tiles ── */
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+}
+
+.tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+.tile {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+}
+.tile .label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+.tile .value {
+    color: var(--ink-bright);
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-top: 0.15rem;
+}
+.tile .value .unit { color: var(--muted); font-size: 0.9rem; font-weight: 400; }
+
+/* ── Tables ── */
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+th {
+    text-align: left;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--grid);
+}
+tr.rowlink { cursor: pointer; }
+tr.rowlink:hover td { background: var(--panel-2); }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Charts ── */
+.chart {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin: 1rem 0;
+    min-height: 320px;
+}
+.chart .empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    color: var(--muted);
+}
+
+/* ── Forms & buttons ── */
+button, .btn {
+    background: var(--panel-2);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem 1.1rem;
+    font: inherit;
+    cursor: pointer;
+}
+button:hover, .btn:hover { background: var(--border); color: var(--ink-bright); }
+button:disabled { opacity: 0.4; cursor: default; }
+
+input, select, textarea {
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); }
+
+label { color: var(--muted); font-size: 0.8rem; }
+
+.badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.75rem;
+    color: var(--ink);
+}

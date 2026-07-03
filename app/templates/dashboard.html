@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="tiles">
+    <div class="tile">
+        <div class="label">Sessions this week</div>
+        <div class="value">{{ stats.sessions_this_week or 0 }}</div>
+    </div>
+    <div class="tile">
+        <div class="label">Peak this week</div>
+        <div class="value">{{ "%.1f"|format(stats.peak_this_week_kg) if stats.peak_this_week_kg else "—" }} <span class="unit">kg</span></div>
+    </div>
+    <div class="tile">
+        <div class="label">All-time peak</div>
+        <div class="value">{{ "%.1f"|format(stats.all_time_peak_kg) if stats.all_time_peak_kg else "—" }} <span class="unit">kg</span></div>
+    </div>
+    <div class="tile">
+        <div class="label">Total sessions</div>
+        <div class="value">{{ stats.total_sessions or 0 }}</div>
+    </div>
+</div>
+
+<h2>Recent sessions</h2>
+{% if recent %}
+<table>
+    <thead>
+        <tr><th>Date</th><th>Exercise</th><th>Grip</th><th>Hand</th><th class="num">Edge</th><th class="num">Peak</th><th class="num">Samples</th></tr>
+    </thead>
+    <tbody>
+        {% for s in recent %}
+        <tr class="rowlink" onclick="location.href='/sessions/{{ s.id }}'">
+            <td>{{ s.started_at.strftime("%a %b %d, %H:%M") }}</td>
+            <td>{{ exercise_labels.get(s.exercise_type, s.exercise_type) }}</td>
+            <td>{{ grip_labels.get(s.grip_type, s.grip_type) }}</td>
+            <td>{{ s.hand }}</td>
+            <td class="num">{{ s.edge_depth_mm }}mm</td>
+            <td class="num">{{ "%.1f"|format(s.peak_force_kg) }} kg</td>
+            <td class="num">{{ s.n_samples }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="muted">No sessions yet — record one from the Capture page.</p>
+{% endif %}
+{% endblock %}

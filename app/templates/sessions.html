@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Sessions · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Hangboard Sessions</h1>
+
+{% if sessions %}
+<table>
+    <thead>
+        <tr>
+            <th>Date</th><th>Exercise</th><th>Grip</th><th>Hand</th>
+            <th class="num">Edge</th><th>Protocol</th>
+            <th class="num">Peak</th><th class="num">Samples</th><th>Notes</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in sessions %}
+        <tr class="rowlink" onclick="location.href='/sessions/{{ s.id }}'">
+            <td>{{ s.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ exercise_labels.get(s.exercise_type, s.exercise_type) }}</td>
+            <td>{{ grip_labels.get(s.grip_type, s.grip_type) }}</td>
+            <td>{{ s.hand }}</td>
+            <td class="num">{{ s.edge_depth_mm }}mm</td>
+            <td>
+                {% if s.on_seconds %}{{ s.on_seconds }}/{{ s.off_seconds }}s · {{ s.target_sets }}×{{ s.target_reps }}{% else %}—{% endif %}
+            </td>
+            <td class="num">{{ "%.1f"|format(s.peak_force_kg) }} kg</td>
+            <td class="num">{{ s.n_samples }}</td>
+            <td class="muted">{{ s.notes or "" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="muted">No sessions recorded yet.</p>
+{% endif %}
+{% endblock %}
