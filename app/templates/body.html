@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Body · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Body Metrics</h1>
+
+{% if msg %}<div class="panel">{{ msg }}</div>{% endif %}
+
+<div class="tiles">
+    {% for key, label, unit in [("weight_kg", "Weight", "kg"), ("body_fat_pct", "Body fat", "%"), ("muscle_mass_kg", "Muscle mass", "kg"), ("bmi", "BMI", "")] %}
+    <div class="tile">
+        <div class="label">{{ label }}</div>
+        <div class="value">
+            {% if latest.get(key) %}{{ "%.1f"|format(latest[key].value) }} <span class="unit">{{ unit }}</span>
+            {% else %}—{% endif %}
+        </div>
+        {% if latest.get(key) %}<div class="muted" style="font-size:0.72rem">{{ latest[key].recorded_at.strftime("%b %d") }}</div>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- ── Sync / import ── -->
+<div class="panel">
+    <div class="sync-row">
+        <form method="post" action="/body/sync">
+            <button type="submit" {{ "disabled" if not creds_configured }}>⟳ Sync Renpho now</button>
+        </form>
+        <span class="muted">
+            {% if not creds_configured %}
+                Set RENPHO_EMAIL / RENPHO_PASSWORD in .env to enable cloud sync.
+            {% elif sync_state %}
+                Last sync: {{ sync_state.last_synced_at.strftime("%b %d %H:%M") if sync_state.last_synced_at else "never" }}
+                · {{ sync_state.last_status }}
+            {% else %}
+                Never synced.
+            {% endif %}
+        </span>
+    </div>
+    <div class="sync-row" style="margin-top:0.75rem">
+        <form method="post" action="/body/import" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".csv" required>
+            <button type="submit">Import Renpho CSV</button>
+        </form>
+        <span class="muted">Fallback: export CSV from the Renpho app and upload it here.</span>
+    </div>
+</div>
+
+<h2>Weight</h2>
+<div id="chart-weight" class="chart"></div>
+
+<h2>Body fat</h2>
+<div id="chart-fat" class="chart"></div>
+
+<h2>Muscle mass</h2>
+<div id="chart-muscle" class="chart"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function drawSeries(elId, metric, unit, color) {
+    const el = document.getElementById(elId);
+    const res = await fetch(`/api/metrics/series?metric=${metric}`);
+    const points = (await res.json()).points;
+    if (!points.length) {
+        TJ.empty(el, "No data yet — sync Renpho or import a CSV.");
+        return;
+    }
+    Plotly.newPlot(el, [{
+        x: points.map(p => p.recorded_at),
+        y: points.map(p => p.value),
+        mode: "lines+markers",
+        line: { color, width: 2 },
+        marker: { size: 5, color },
+        hovertemplate: `%{y:.1f} ${unit} · %{x|%b %d %Y}<extra></extra>`,
+    }], TJ.layout({
+        xaxis: TJ.axis({ type: "date" }),
+        yaxis: TJ.axis({ title: unit }),
+        showlegend: false,
+        margin: { l: 55, r: 20, t: 10, b: 40 },
+    }), TJ.config);
+}
+
+drawSeries("chart-weight", "weight_kg", "kg", TJ.hero);
+drawSeries("chart-fat", "body_fat_pct", "%", "#b58a2f");
+drawSeries("chart-muscle", "muscle_mass_kg", "kg", "#3f83cf");
+</script>
+{% endblock %}
