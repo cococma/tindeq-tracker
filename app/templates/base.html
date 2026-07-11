@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}TrainingJournal{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <!-- Vendored locally so the app works with no internet connection. -->
+    <script src="/static/vendor/plotly.min.js" charset="utf-8"></script>
+    <script src="/static/vendor/htmx.min.js"></script>
     <script src="/static/charts.js"></script>
 </head>
 <body>
