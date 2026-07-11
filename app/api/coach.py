@@ -44,7 +44,7 @@ async def recommendation(req: RecommendationRequest, conn=Depends(db)):
         text = await asyncio.to_thread(coach.get_recommendation, context_md, req.constraint)
     except CoachNotConfigured as e:
         raise HTTPException(503, str(e))
-    rid = repo.save_recommendation(conn, snapshot, req.constraint or None, text, coach.MODEL)
+    rid = repo.save_recommendation(conn, snapshot, req.constraint or None, text, coach.active_model_label())
     return {"id": rid, "recommendation": text}
 
 

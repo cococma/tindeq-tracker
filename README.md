@@ -21,8 +21,20 @@ Optional `.env` keys:
 
 | Key | Enables |
 |---|---|
-| `ANTHROPIC_API_KEY` | The AI coach (Claude API) |
+| `ANTHROPIC_API_KEY` | AI coach via the Anthropic API (not needed if the Claude Code CLI is installed — see below) |
 | `RENPHO_EMAIL` / `RENPHO_PASSWORD` | Renpho cloud sync (CSV import works without) |
+
+**AI coach backends.** The coach runs on whichever Claude access you have:
+
+- **Claude Code CLI (default)** — if the `claude` CLI is installed and signed
+  in, the coach uses your claude.ai subscription: no API key, no per-token
+  billing. Install with `curl -fsSL https://claude.ai/install.sh | bash` and
+  sign in once (`claude` → `/login`). Optionally run `claude setup-token` and
+  put the result in `.env` as `CLAUDE_CODE_OAUTH_TOKEN` so the server never
+  depends on the Keychain login. `COACH_CLI_MODEL=opus` (or `sonnet`) picks a
+  model; empty uses your account default.
+- **Anthropic API** — set `ANTHROPIC_API_KEY` (pay-per-token). When a key is
+  set it takes precedence; force a choice with `COACH_BACKEND=cli` or `api`.
 
 ## Run
 

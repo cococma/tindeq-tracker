@@ -1,11 +1,22 @@
-"""AI coach — wraps the Claude API for recommendations and chat."""
+"""AI coach — Claude behind two interchangeable backends.
 
-import anthropic
+"cli": runs the local Claude Code CLI headless (`claude -p`) on the user's
+       claude.ai subscription login — no API key, no per-token billing.
+"api": the Anthropic API via the official SDK with ANTHROPIC_API_KEY.
+
+COACH_BACKEND=auto (default) uses the API when a key is set, else the CLI.
+"""
+
+import json
+import os
+import shutil
+import subprocess
 
 from app import config
 
 MODEL = "claude-opus-4-8"
 MAX_TOKENS = 16000
+CLI_TIMEOUT_S = 600
 
 SYSTEM_PROMPT = """You are a climbing and strength training coach embedded in the athlete's \
 personal training journal. You see their recent hangboard sessions (Tindeq force data), \
@@ -33,11 +44,166 @@ class CoachNotConfigured(Exception):
     pass
 
 
-def _client():
-    if not config.ANTHROPIC_API_KEY:
-        raise CoachNotConfigured(
-            "ANTHROPIC_API_KEY is not set — add it to .env to enable the AI coach."
+# ── Backend selection ─────────────────────────────────────────────────────────
+
+def find_cli():
+    """Path to the claude binary, or None."""
+    candidates = [
+        config.CLAUDE_CLI_PATH,
+        shutil.which("claude"),
+        os.path.expanduser("~/.local/bin/claude"),
+        os.path.expanduser("~/.claude/local/claude"),
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def backend():
+    """Resolve the active backend: 'api' or 'cli'."""
+    choice = config.COACH_BACKEND
+    if choice == "api":
+        if not config.ANTHROPIC_API_KEY:
+            raise CoachNotConfigured("COACH_BACKEND=api but ANTHROPIC_API_KEY is not set.")
+        return "api"
+    if choice == "cli":
+        if not find_cli():
+            raise CoachNotConfigured(
+                "COACH_BACKEND=cli but the Claude Code CLI was not found — "
+                "install it (https://claude.ai/install.sh) or set CLAUDE_CLI_PATH."
+            )
+        return "cli"
+    # auto
+    if config.ANTHROPIC_API_KEY:
+        return "api"
+    if find_cli():
+        return "cli"
+    raise CoachNotConfigured(
+        "No coach backend available — install the Claude Code CLI and sign in "
+        "(uses your claude.ai subscription), or set ANTHROPIC_API_KEY in .env."
+    )
+
+
+def active_model_label():
+    if backend() == "api":
+        return MODEL
+    return "claude-code:{}".format(config.COACH_CLI_MODEL or "default")
+
+
+# ── CLI backend ───────────────────────────────────────────────────────────────
+
+def _cli_cmd(output_format):
+    cmd = [
+        find_cli(), "-p",
+        "--tools", "",              # coach is pure text: no file/shell access
+        "--setting-sources", "",    # don't load user/project settings or CLAUDE.md
+        "--system-prompt", SYSTEM_PROMPT,
+        "--output-format", output_format,
+    ]
+    if output_format == "stream-json":
+        cmd += ["--include-partial-messages", "--verbose"]
+    if config.COACH_CLI_MODEL:
+        cmd += ["--model", config.COACH_CLI_MODEL]
+    return cmd
+
+
+def _cli_env():
+    env = dict(os.environ)
+    # Make sure the CLI bills the subscription login, never a stray API key.
+    env.pop("ANTHROPIC_API_KEY", None)
+    if config.CLAUDE_CODE_OAUTH_TOKEN:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = config.CLAUDE_CODE_OAUTH_TOKEN
+    return env
+
+
+def _cli_run(prompt):
+    """One-shot CLI call; returns the response text."""
+    proc = subprocess.run(
+        _cli_cmd("json"),
+        input=prompt,
+        capture_output=True, text=True,
+        env=_cli_env(),
+        timeout=CLI_TIMEOUT_S,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "claude CLI failed (exit {}): {}".format(
+                proc.returncode, (proc.stderr or proc.stdout).strip()[-500:]
+            )
         )
+    result = json.loads(proc.stdout)
+    if result.get("is_error"):
+        raise RuntimeError("claude CLI error: {}".format(result.get("result", "unknown")))
+    return result.get("result", "")
+
+
+def _cli_stream(prompt):
+    """Yield text chunks from a streaming CLI call."""
+    proc = subprocess.Popen(
+        _cli_cmd("stream-json"),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+        env=_cli_env(),
+    )
+    try:
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+        yielded = False
+        final_text = None
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if obj.get("type") == "stream_event":
+                event = obj.get("event", {})
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "text_delta" and delta.get("text"):
+                        yielded = True
+                        yield delta["text"]
+            elif obj.get("type") == "result":
+                if obj.get("is_error"):
+                    raise RuntimeError(
+                        "claude CLI error: {}".format(obj.get("result", "unknown"))
+                    )
+                final_text = obj.get("result")
+        proc.wait(timeout=30)
+        if proc.returncode != 0:
+            stderr = proc.stderr.read()
+            raise RuntimeError(
+                "claude CLI failed (exit {}): {}".format(proc.returncode, stderr.strip()[-500:])
+            )
+        # Partial events missing (older CLI / format change): fall back to the
+        # complete result so the user still gets an answer.
+        if not yielded and final_text:
+            yield final_text
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def _cli_chat_prompt(context_md, history, user_message):
+    """Flatten context + prior turns into one prompt (the CLI is stateless)."""
+    parts = ["My training context:\n\n{}".format(context_md)]
+    if history:
+        turns = []
+        for m in history:
+            speaker = "Athlete" if m["role"] == "user" else "Coach (you)"
+            turns.append("{}: {}".format(speaker, m["content"]))
+        parts.append("Our conversation so far:\n\n" + "\n\n".join(turns))
+    parts.append("Athlete: {}\n\nReply as the coach — reply text only, no speaker label.".format(user_message))
+    return "\n\n---\n\n".join(parts)
+
+
+# ── API backend ───────────────────────────────────────────────────────────────
+
+def _client():
+    import anthropic
     return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
 
@@ -47,18 +213,22 @@ def _system():
     return [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
 
 
-def get_recommendation(context_md: str, constraint: str = "") -> str:
+# ── Public interface ──────────────────────────────────────────────────────────
+
+def get_recommendation(context_md, constraint=""):
     """One-shot 'what should I do today?' — non-streaming."""
-    user = f"""Here is my current training context:
+    user = """Here is my current training context:
 
-{context_md}
+{}
 
-What should I do today?"""
+What should I do today?""".format(context_md)
     if constraint.strip():
-        user += f"\n\nConstraints for today: {constraint.strip()}"
+        user += "\n\nConstraints for today: {}".format(constraint.strip())
 
-    client = _client()
-    response = client.messages.create(
+    if backend() == "cli":
+        return _cli_run(user)
+
+    response = _client().messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         thinking={"type": "adaptive"},
@@ -68,22 +238,26 @@ What should I do today?"""
     return next(b.text for b in response.content if b.type == "text")
 
 
-def stream_chat(context_md: str, history: list, user_message: str):
+def stream_chat(context_md, history, user_message):
     """Yield text chunks for a chat turn. history: [{role, content}, ...]."""
+    if backend() == "cli":
+        for chunk in _cli_stream(_cli_chat_prompt(context_md, history, user_message)):
+            yield chunk
+        return
+
     messages = []
     for i, m in enumerate(history):
         content = m["content"]
         if i == 0 and m["role"] == "user":
-            content = f"My training context:\n\n{context_md}\n\n---\n\n{content}"
+            content = "My training context:\n\n{}\n\n---\n\n{}".format(context_md, content)
         messages.append({"role": m["role"], "content": content})
 
     new_content = user_message
     if not history:
-        new_content = f"My training context:\n\n{context_md}\n\n---\n\n{user_message}"
+        new_content = "My training context:\n\n{}\n\n---\n\n{}".format(context_md, user_message)
     messages.append({"role": "user", "content": new_content})
 
-    client = _client()
-    with client.messages.stream(
+    with _client().messages.stream(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         thinking={"type": "adaptive"},
@@ -94,9 +268,11 @@ def stream_chat(context_md: str, history: list, user_message: str):
             yield text
 
 
-def count_context_tokens(context_md: str) -> int:
-    client = _client()
-    return client.messages.count_tokens(
+def count_context_tokens(context_md):
+    """Exact count needs the API; unavailable on the CLI backend."""
+    if not config.ANTHROPIC_API_KEY:
+        raise CoachNotConfigured("token counting requires ANTHROPIC_API_KEY")
+    return _client().messages.count_tokens(
         model=MODEL,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context_md}],
