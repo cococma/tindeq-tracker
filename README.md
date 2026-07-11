@@ -89,5 +89,3 @@ Day-to-day management: `scripts/app start|stop|restart|status|logs`
   fallback. Classic-app (renpho.qnclouds.com) accounts are not supported.
 - **Body metrics schema** is source/metric/value/time, so Oura (sleep, HRV,
   readiness) can land in the same table later with a new `source`.
-- `tracker.py` / `ui.py` are the legacy terminal capture tools, kept until the
-  web Capture page is verified against the real device.
