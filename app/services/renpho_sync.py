@@ -5,7 +5,12 @@ from datetime import datetime, timedelta, timezone
 from app import config
 from app.db import get_db_connection
 from app.repos import metrics as repo
-from app.services.renpho_client import FIELD_TO_METRIC, RenphoClient, RenphoError
+from app.services.renpho_client import (
+    FIELD_TO_METRIC,
+    RenphoClient,
+    RenphoError,
+    measurement_timestamp,
+)
 
 SOURCE = "renpho"
 AUTO_SYNC_STALENESS = timedelta(hours=12)
@@ -16,7 +21,7 @@ def credentials_configured() -> bool:
 
 
 def _rows_from_measurement(m: dict):
-    ts = m.get("time_stamp")
+    ts = measurement_timestamp(m)
     if not ts:
         return
     recorded_at = datetime.fromtimestamp(ts, tz=timezone.utc)
@@ -44,20 +49,17 @@ def sync(conn=None) -> dict:
             repo.set_sync_state(conn, SOURCE, status)
             return {"ok": False, "status": status}
 
-        state = repo.get_sync_state(conn, SOURCE)
-        last_at = 0
-        if state and state["cursor"]:
-            last_at = int(state["cursor"].get("last_at", 0))
-
+        # The Renpho Health API has no incremental cursor — fetch everything;
+        # insert_metrics is idempotent (unique on source/metric/recorded_at).
         client = RenphoClient(config.RENPHO_EMAIL, config.RENPHO_PASSWORD)
         try:
-            measurements = client.measurements(last_at=last_at)
+            measurements = client.measurements()
         finally:
             client.close()
 
         rows = [r for m in measurements for r in _rows_from_measurement(m)]
         inserted = repo.insert_metrics(conn, rows) if rows else 0
-        max_ts = max((m.get("time_stamp") or 0 for m in measurements), default=last_at)
+        max_ts = max((measurement_timestamp(m) or 0 for m in measurements), default=0)
         status = f"ok · {len(measurements)} measurements · {inserted} new values"
         repo.set_sync_state(conn, SOURCE, status, cursor_data={"last_at": max_ts}, synced=True)
         return {"ok": True, "status": status, "inserted": inserted}

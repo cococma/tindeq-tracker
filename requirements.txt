@@ -8,5 +8,5 @@ jinja2>=3.1.0
 python-multipart>=0.0.9
 websockets>=12.0
 httpx>=0.27.0
-rsa>=4.9
+pycryptodome>=3.20
 anthropic>=0.50.0
