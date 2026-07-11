@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Coach · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Coach</h1>
+
+<!-- ── Today's recommendation ── -->
+<div class="panel">
+    <h3 style="margin-top:0">What should I do today?</h3>
+    <div class="sync-row">
+        <input id="constraint" style="flex:1" placeholder="optional constraints — e.g. 'only 45 minutes, at home, skin is thin'">
+        <button id="ask" class="primary">Ask the coach</button>
+    </div>
+    <div id="rec-output" class="coach-output" hidden></div>
+</div>
+
+<!-- ── Chat ── -->
+<div class="panel">
+    <h3 style="margin-top:0">Chat
+        <button id="new-chat" class="linklike" style="margin-left:1rem">new conversation</button>
+        {% if conversations %}
+        <select id="conv-select" style="margin-left:1rem">
+            <option value="">— open previous —</option>
+            {% for c in conversations %}
+            <option value="{{ c.id }}">{{ c.title or "Conversation " ~ c.id }} ({{ c.n_messages }})</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </h3>
+    <div id="chat-log" class="chat-log"></div>
+    <div class="sync-row">
+        <input id="chat-input" style="flex:1" placeholder="ask about training, fatigue, planning…">
+        <button id="send">Send</button>
+    </div>
+</div>
+
+<!-- ── Past recommendations ── -->
+{% if recommendations %}
+<details class="panel">
+    <summary>Past recommendations ({{ recommendations|length }})</summary>
+    {% for r in recommendations %}
+    <div class="rec-item">
+        <div class="muted">{{ r.created_at.strftime("%a %b %d %Y, %H:%M") }}
+            {% if r.constraint_text %} · constraints: {{ r.constraint_text }}{% endif %}</div>
+        <div class="coach-output" data-md>{{ r.recommendation }}</div>
+    </div>
+    {% endfor %}
+</details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/vendor/marked.min.js"></script>
+<script>
+const md = (text) => marked.parse(text, { breaks: true });
+
+// Render stored recommendations as markdown
+document.querySelectorAll("[data-md]").forEach(el => { el.innerHTML = md(el.textContent); });
+
+// ── Recommendation ──
+document.getElementById("ask").addEventListener("click", async () => {
+    const btn = document.getElementById("ask");
+    const out = document.getElementById("rec-output");
+    btn.disabled = true; btn.textContent = "Thinking…";
+    out.hidden = false; out.innerHTML = '<span class="muted">Analyzing your training data…</span>';
+    try {
+        const res = await fetch("/api/coach/recommendation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ constraint: document.getElementById("constraint").value }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            out.innerHTML = `<span class="muted">⚠ ${err.detail || res.status}</span>`;
+        } else {
+            out.innerHTML = md((await res.json()).recommendation);
+        }
+    } catch (e) {
+        out.innerHTML = `<span class="muted">⚠ ${e}</span>`;
+    }
+    btn.disabled = false; btn.textContent = "Ask the coach";
+});
+
+// ── Chat ──
+let conversationId = null;
+const log = document.getElementById("chat-log");
+
+function bubble(role, html) {
+    const div = document.createElement("div");
+    div.className = `bubble ${role}`;
+    div.innerHTML = html;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+}
+
+async function send() {
+    const input = document.getElementById("chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = "";
+    bubble("user", md(message));
+    const reply = bubble("assistant", '<span class="muted">…</span>');
+
+    const res = await fetch("/api/coach/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId, message }),
+    });
+    conversationId = parseInt(res.headers.get("X-Conversation-Id")) || conversationId;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        reply.innerHTML = md(text);
+        log.scrollTop = log.scrollHeight;
+    }
+}
+
+document.getElementById("send").addEventListener("click", send);
+document.getElementById("chat-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") send();
+});
+document.getElementById("new-chat").addEventListener("click", () => {
+    conversationId = null;
+    log.innerHTML = "";
+});
+
+const convSel = document.getElementById("conv-select");
+if (convSel) convSel.addEventListener("change", async () => {
+    if (!convSel.value) return;
+    conversationId = parseInt(convSel.value);
+    const res = await fetch(`/api/coach/conversations/${conversationId}`);
+    const data = await res.json();
+    log.innerHTML = "";
+    for (const m of data.messages) bubble(m.role, md(m.content));
+});
+</script>
+{% endblock %}

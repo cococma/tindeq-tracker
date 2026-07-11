@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Trends · TrainingJournal{% endblock %}
+{% block content %}
+<h1>Strength Trends</h1>
+<p class="muted">Grip is encoded by color, hand by line style (solid = right, dashed = left).</p>
+
+<h2>Session peak force</h2>
+<div id="peaks" class="chart"></div>
+
+<h2>MVC baseline</h2>
+<div id="mvc" class="chart"></div>
+
+<h2>RFD baseline</h2>
+<div id="rfd" class="chart"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function seriesBy(rows, xKey, yKey) {
+    // Group rows into one trace per grip × hand; color by grip, dash by hand.
+    const groups = new Map();
+    for (const r of rows) {
+        if (r[yKey] == null) continue;
+        const key = `${r.grip_type}|${r.hand}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+    }
+    const traces = [];
+    for (const [key, pts] of groups) {
+        const [grip, hand] = key.split("|");
+        traces.push({
+            x: pts.map(p => p[xKey]),
+            y: pts.map(p => p[yKey]),
+            mode: "lines+markers",
+            name: `${TJ.gripLabel[grip] || grip} · ${hand}`,
+            line: { color: TJ.gripColor[grip] || TJ.hero, width: 2, dash: TJ.handDash[hand] || "solid" },
+            marker: { size: 8, color: TJ.gripColor[grip] || TJ.hero },
+            hovertemplate: "%{y:.1f} · %{x|%b %d %Y}<extra>" + (TJ.gripLabel[grip] || grip) + " · " + hand + "</extra>",
+        });
+    }
+    return traces;
+}
+
+function drawOrEmpty(elId, traces, yTitle, emptyMsg) {
+    const el = document.getElementById(elId);
+    if (!traces.length) { TJ.empty(el, emptyMsg); return; }
+    Plotly.newPlot(el, traces, TJ.layout({
+        xaxis: TJ.axis({ type: "date" }),
+        yaxis: TJ.axis({ title: yTitle, rangemode: "tozero" }),
+    }), TJ.config);
+}
+
+(async () => {
+    const [peaksRes, baseRes] = await Promise.all([
+        fetch("/api/trends/session-peaks"),
+        fetch("/api/trends/baselines"),
+    ]);
+    const peaks = (await peaksRes.json()).peaks;
+    const baselines = (await baseRes.json()).baselines;
+
+    drawOrEmpty("peaks", seriesBy(peaks, "started_at", "peak_force_kg"), "kg",
+        "No sessions yet.");
+
+    const mvc = baselines.filter(b => b.test_type === "mvc_test" || b.test_type === "mvc");
+    drawOrEmpty("mvc", seriesBy(mvc, "tested_at", "peak_force_kg"), "kg",
+        "No MVC tests yet — record one from the Capture page.");
+
+    const rfd = baselines.filter(b => b.test_type === "rfd_test" || b.test_type === "rfd");
+    drawOrEmpty("rfd", seriesBy(rfd, "tested_at", "rfd_kg_per_s"), "kg/s",
+        "No RFD tests yet — record one from the Capture page.");
+})();
+</script>
+{% endblock %}

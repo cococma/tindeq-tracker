@@ -1,0 +1,35 @@
+#!/bin/bash
+# Manage the TrainingJournal server.
+#   scripts/app start|stop|restart|status|logs
+# The server normally starts itself at login via TrainingJournal.app.
+set -euo pipefail
+
+LOG="$HOME/Library/Logs/TrainingJournal/server.log"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+
+case "${1:-}" in
+    start)
+        open -a TrainingJournal 2>/dev/null || "$REPO/scripts/serve"
+        sleep 2
+        curl -s -o /dev/null -w "http://localhost:8000 -> %{http_code}\n" --max-time 5 http://localhost:8000/ || true
+        ;;
+    stop)
+        pkill -f "uvicorn app.main:app" && echo "stopped" || echo "not running"
+        ;;
+    restart)
+        pkill -f "uvicorn app.main:app" 2>/dev/null || true
+        sleep 1
+        "$0" start
+        ;;
+    status)
+        pgrep -fl "uvicorn app.main:app" || echo "not running"
+        curl -s -o /dev/null -w "http://localhost:8000 -> %{http_code}\n" --max-time 3 http://localhost:8000/ || true
+        ;;
+    logs)
+        tail -n 50 -f "$LOG"
+        ;;
+    *)
+        echo "usage: scripts/app {start|stop|restart|status|logs}"
+        exit 1
+        ;;
+esac

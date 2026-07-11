@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}TrainingJournal{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Vendored locally so the app works with no internet connection. -->
+    <script src="/static/vendor/plotly.min.js" charset="utf-8"></script>
+    <script src="/static/vendor/htmx.min.js"></script>
+    <script src="/static/charts.js"></script>
+</head>
+<body>
+<nav>
+    <span class="brand">TRAINING JOURNAL</span>
+    <a class="navlink {{ 'active' if active == 'dashboard' }}" href="/">Dashboard</a>
+    <a class="navlink {{ 'active' if active == 'capture' }}" href="/capture">Capture</a>
+    <a class="navlink {{ 'active' if active == 'sessions' }}" href="/sessions">Sessions</a>
+    <a class="navlink {{ 'active' if active == 'journal' }}" href="/journal">Journal</a>
+    <a class="navlink {{ 'active' if active == 'climbing' }}" href="/climbing">Climbing</a>
+    <a class="navlink {{ 'active' if active == 'body' }}" href="/body">Body</a>
+    <a class="navlink {{ 'active' if active == 'load' }}" href="/load">Load</a>
+    <a class="navlink {{ 'active' if active == 'trends' }}" href="/trends">Trends</a>
+    <a class="navlink {{ 'active' if active == 'coach' }}" href="/coach">Coach</a>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

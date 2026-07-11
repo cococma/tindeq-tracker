@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Session {{ session.id }} · TrainingJournal{% endblock %}
+{% block content %}
+<h1>
+    {{ exercise_labels.get(session.exercise_type, session.exercise_type) }}
+    <span class="muted">· {{ session.started_at.strftime("%A %b %d %Y, %H:%M") }}</span>
+</h1>
+
+<p>
+    <span class="badge">{{ grip_labels.get(session.grip_type, session.grip_type) }}</span>
+    <span class="badge">{{ session.hand }} hand</span>
+    <span class="badge">{{ session.edge_depth_mm }}mm edge</span>
+    {% if session.on_seconds %}
+    <span class="badge">{{ session.on_seconds }}s on / {{ session.off_seconds }}s off</span>
+    <span class="badge">{{ session.target_sets }} sets × {{ session.target_reps }} reps</span>
+    {% endif %}
+    {% if session.target_weight_kg %}<span class="badge">target {{ session.target_weight_kg }} kg</span>{% endif %}
+</p>
+
+<div class="tiles">
+    <div class="tile">
+        <div class="label">Peak force</div>
+        <div class="value">{{ "%.1f"|format(session.peak_force_kg) }} <span class="unit">kg</span></div>
+    </div>
+    <div class="tile">
+        <div class="label">Mean force</div>
+        <div class="value">{{ "%.1f"|format(session.mean_force_kg) }} <span class="unit">kg</span></div>
+    </div>
+    <div class="tile">
+        <div class="label">Duration</div>
+        <div class="value">{% if duration_s %}{{ duration_s // 60 }}:{{ "%02d"|format(duration_s % 60) }}{% else %}—{% endif %}</div>
+    </div>
+    <div class="tile">
+        <div class="label">Samples</div>
+        <div class="value">{{ session.n_samples }}</div>
+    </div>
+</div>
+
+{% if session.notes %}<div class="panel">{{ session.notes }}</div>{% endif %}
+
+<h2>Force trace</h2>
+<div id="trace" class="chart"></div>
+
+<form method="post" action="/sessions/{{ session.id }}/delete" style="margin-top:1.5rem"
+      onsubmit="return confirm('Delete this session and all its force data?')">
+    <button type="submit" class="linklike">delete this session</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+    const el = document.getElementById("trace");
+    const res = await fetch(`/api/sessions/{{ session.id }}/trace`);
+    const data = await res.json();
+    if (!data.t.length) { TJ.empty(el, "No force samples recorded for this session."); return; }
+
+    const traces = [{
+        x: data.t, y: data.force,
+        mode: "lines", name: "Force",
+        line: { color: TJ.hero, width: 2 },
+        hovertemplate: "%{y:.1f} kg · %{x:.1f}s<extra></extra>",
+    }];
+
+    const layout = TJ.layout({
+        xaxis: TJ.axis({ title: "seconds" }),
+        yaxis: TJ.axis({ title: "kg", rangemode: "tozero" }),
+        showlegend: false,
+    });
+
+    {% if session.target_weight_kg %}
+    layout.shapes = [{
+        type: "line", xref: "paper", x0: 0, x1: 1,
+        y0: {{ session.target_weight_kg }}, y1: {{ session.target_weight_kg }},
+        line: { color: TJ.amber, width: 1, dash: "dot" },
+    }];
+    layout.annotations = [{
+        xref: "paper", x: 1, y: {{ session.target_weight_kg }},
+        text: "target", showarrow: false, yshift: 8,
+        font: { color: TJ.amber, size: 11 },
+    }];
+    {% endif %}
+
+    Plotly.newPlot(el, traces, layout, TJ.config);
+})();
+</script>
+{% endblock %}
