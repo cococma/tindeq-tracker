@@ -9,7 +9,7 @@
         <tr>
             <th>Date</th><th>Exercise</th><th>Grip</th><th>Hand</th>
             <th class="num">Edge</th><th>Protocol</th>
-            <th class="num">Peak</th><th class="num">Samples</th><th>Notes</th>
+            <th class="num">Peak</th><th class="num">Samples</th><th>Notes</th><th></th>
         </tr>
     </thead>
     <tbody>
@@ -26,6 +26,12 @@
             <td class="num">{{ "%.1f"|format(s.peak_force_kg) }} kg</td>
             <td class="num">{{ s.n_samples }}</td>
             <td class="muted">{{ s.notes or "" }}</td>
+            <td onclick="event.stopPropagation()">
+                <form method="post" action="/sessions/{{ s.id }}/delete"
+                      onsubmit="return confirm('Delete this session and all its force data?')">
+                    <button type="submit" class="linklike">delete</button>
+                </form>
+            </td>
         </tr>
         {% endfor %}
     </tbody>

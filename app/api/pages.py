@@ -1,7 +1,7 @@
 """Server-rendered HTML pages."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 import json
 
@@ -53,6 +53,13 @@ def session_detail(request: Request, session_id: int, conn=Depends(db)):
     if session["ended_at"] and session["started_at"]:
         duration_s = int((session["ended_at"] - session["started_at"]).total_seconds())
     return render(request, "session_detail.html", session=session, duration_s=duration_s, active="sessions")
+
+
+@router.post("/sessions/{session_id}/delete")
+def delete_session(session_id: int, conn=Depends(db)):
+    if not repo.delete_session(conn, session_id):
+        raise HTTPException(404, "session not found")
+    return RedirectResponse("/sessions", status_code=303)
 
 
 @router.get("/trends", response_class=HTMLResponse)

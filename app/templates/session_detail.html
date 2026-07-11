@@ -40,6 +40,11 @@
 
 <h2>Force trace</h2>
 <div id="trace" class="chart"></div>
+
+<form method="post" action="/sessions/{{ session.id }}/delete" style="margin-top:1.5rem"
+      onsubmit="return confirm('Delete this session and all its force data?')">
+    <button type="submit" class="linklike">delete this session</button>
+</form>
 {% endblock %}
 
 {% block scripts %}

@@ -30,6 +30,15 @@ def close_session(conn, session_id):
     conn.commit()
 
 
+def delete_session(conn, session_id):
+    """Delete a session; its measurements go with it (ON DELETE CASCADE)."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+        deleted = cur.rowcount
+    conn.commit()
+    return deleted
+
+
 def save_baseline(conn, cfg, peak_force_kg, rfd_kg_per_s=None):
     with conn.cursor() as cur:
         cur.execute(
