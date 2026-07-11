@@ -1,0 +1,16 @@
+#!/bin/bash
+# Start the TrainingJournal server if it isn't already running.
+# Called by TrainingJournal.app (login item) and scripts/app.
+set -u
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_DIR="$HOME/Library/Logs/TrainingJournal"
+mkdir -p "$LOG_DIR"
+
+if curl -s -o /dev/null --max-time 2 http://localhost:8000/; then
+    exit 0  # already up
+fi
+
+cd "$REPO"
+nohup ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 \
+    >> "$LOG_DIR/server.log" 2>&1 &

@@ -44,6 +44,25 @@ Optional `.env` keys:
 
 Open http://localhost:8000.
 
+## Run as an app (macOS)
+
+The repo lives in `~/Documents`, which macOS gates behind a per-app privacy
+prompt — a bare launchd agent gets silently denied, so the server is started
+by a tiny **TrainingJournal.app** instead (an app can show the prompt once and
+keep the permission):
+
+1. Build it (already done on this machine):
+   `osacompile -o /Applications/TrainingJournal.app` with a one-line script
+   that calls `scripts/serve` — which starts uvicorn only if it isn't running.
+2. Add the app to **Login Items** (hidden) so the server starts at login.
+   Postgres already autostarts via `brew services`.
+3. In Safari, open http://localhost:8000 → **File → Add to Dock**. That dock
+   icon is the "app" you actually click — its window is the web UI.
+
+Day-to-day management: `scripts/app start|stop|restart|status|logs`
+(logs land in `~/Library/Logs/TrainingJournal/server.log`). After a
+`git pull`, run `scripts/app restart`.
+
 | Page | What it does |
 |---|---|
 | Dashboard | Weekly tiles + recent sessions |
