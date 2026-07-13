@@ -30,7 +30,11 @@ def render(request: Request, name: str, **ctx):
         exercise_labels=EXERCISE_LABELS,
         grip_labels=GRIP_LABELS,
     )
-    return _templates(request).TemplateResponse(request, name, ctx)
+    resp = _templates(request).TemplateResponse(request, name, ctx)
+    # Pages must never be served from browser cache — Chrome restores closed
+    # tabs from cache, resurrecting stale JS after the app updates.
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @router.get("/", response_class=HTMLResponse)
