@@ -18,7 +18,7 @@ import asyncio
 
 from bleak import BleakClient
 
-from app.constants import BASELINE_EXERCISES, TIMER_EXERCISES
+from app.constants import BASELINE_DEFAULTS, BASELINE_EXERCISES, TIMER_EXERCISES
 from app.db import get_db_connection
 from app.repos.tindeq import (
     close_session, create_session, insert_measurements_batch, save_baseline,
@@ -50,6 +50,8 @@ class CaptureManager:
         self._pending = []          # (t_rel_s, force_kg) awaiting broadcast
         self._t0 = None
         self._peak = 0.0
+        self._attempt_peaks = []    # per-attempt peaks for baseline tests
+        self._attempt_rfds = []     # per-attempt RFD for the RFD test
         self._disconnected = False
 
     # ── Subscription ─────────────────────────────────────────────────────────
@@ -88,6 +90,8 @@ class CaptureManager:
         self._pending = []
         self._t0 = None
         self._peak = 0.0
+        self._attempt_peaks = []
+        self._attempt_rfds = []
         self._disconnected = False
         self._stop_event = asyncio.Event()
         self._task = asyncio.create_task(self._run(cfg))
@@ -140,8 +144,7 @@ class CaptureManager:
                 self._set_state("recording", "Recording")
 
                 tasks = [asyncio.create_task(self._broadcast_loop())]
-                if cfg["exercise_type"] in TIMER_EXERCISES:
-                    tasks.append(asyncio.create_task(self._timer_loop(cfg)))
+                tasks += self._protocol_tasks(cfg)
 
                 await self._stop_event.wait()
                 for t in tasks:
@@ -175,8 +178,7 @@ class CaptureManager:
 
         self._set_state("recording", "Recording (SIMULATED)")
         tasks = [asyncio.create_task(self._broadcast_loop())]
-        if cfg["exercise_type"] in TIMER_EXERCISES:
-            tasks.append(asyncio.create_task(self._timer_loop(cfg)))
+        tasks += self._protocol_tasks(cfg)
 
         async def source():
             ts = 0
@@ -197,6 +199,13 @@ class CaptureManager:
         self.result = result
         self._broadcast({"type": "result", **result})
         self._set_state("done", result["message"])
+
+    def _protocol_tasks(self, cfg):
+        if cfg["exercise_type"] in TIMER_EXERCISES:
+            return [asyncio.create_task(self._timer_loop(cfg))]
+        if cfg["exercise_type"] in BASELINE_EXERCISES:
+            return [asyncio.create_task(self._baseline_loop(cfg))]
+        return []
 
     @staticmethod
     def _should_record(cfg) -> bool:
@@ -223,14 +232,22 @@ class CaptureManager:
         conn = get_db_connection()
         try:
             if cfg["exercise_type"] in BASELINE_EXERCISES:
+                # Best attempt only — force between attempts (racking the
+                # handle, early grabs) must not count toward the baseline.
+                best_peak = max(self._attempt_peaks) if self._attempt_peaks else self._peak
                 rfd = None
-                if cfg["exercise_type"] == "rfd_test" and n > 1:
-                    rfd = calculate_rfd(self._samples)
-                save_baseline(conn, cfg, self._peak, rfd_kg_per_s=rfd)
-                msg = f"Baseline saved · peak {peak} kg"
+                if cfg["exercise_type"] == "rfd_test":
+                    if self._attempt_rfds:
+                        rfd = max(self._attempt_rfds)
+                    elif n > 1:
+                        rfd = calculate_rfd(self._samples)
+                save_baseline(conn, cfg, best_peak, rfd_kg_per_s=rfd)
+                msg = f"Baseline saved · peak {round(best_peak, 2)} kg"
                 if rfd:
                     msg += f" · RFD {rfd:.1f} kg/s"
-                return {"saved": True, "peak": peak, "n_samples": n, "message": msg}
+                if self._attempt_peaks:
+                    msg += " · attempts " + " / ".join(f"{p:g}" for p in self._attempt_peaks) + " kg"
+                return {"saved": True, "peak": round(best_peak, 2), "n_samples": n, "message": msg}
 
             if self._samples:
                 insert_measurements_batch(conn, session_id, self._samples)
@@ -262,14 +279,15 @@ class CaptureManager:
             "rep": rep, "set": set_num, "total_reps": total_reps, "total_sets": total_sets,
         })
 
-    async def _tick(self, seconds, phase, rep, set_num, total_reps, total_sets, announce=()):
+    async def _tick(self, seconds, phase, rep, set_num, total_reps, total_sets,
+                    announce=(), count_last=3):
         for remaining in range(seconds, 0, -1):
             if self._stop_event.is_set():
                 return
             self._phase(phase, remaining, rep, set_num, total_reps, total_sets)
             if remaining in announce:
                 self._cue(f"{remaining} seconds")
-            elif remaining <= 3:
+            elif remaining <= count_last:
                 self._cue(str(remaining))
             await asyncio.sleep(1)
 
@@ -301,6 +319,50 @@ class CaptureManager:
 
         self._phase("DONE", 0, reps, sets, reps, sets)
         self._cue("Session complete")
+        self._stop_event.set()
+
+    # ── Baseline protocol (MVC / RFD tests) ──────────────────────────────────
+
+    async def _baseline_loop(self, cfg):
+        ex = cfg["exercise_type"]
+        d = BASELINE_DEFAULTS[ex]
+        attempts = cfg.get("target_sets") or d["attempts"]
+        pull_s   = cfg.get("on_seconds") or d["pull_s"]
+        rest_s   = cfg.get("set_rest_s") or d["rest_s"]
+        explosive = ex == "rfd_test"
+
+        self._phase("READY", 3, 0, 0, 0, attempts)
+        self._cue("Starting in")
+        await self._tick(3, "READY", 0, 0, 0, attempts)
+
+        for attempt in range(1, attempts + 1):
+            if self._stop_event.is_set():
+                return
+            start = len(self._samples)
+            self._cue("Pull! Fast and hard" if explosive else "Pull! Build to max")
+            # No mid-pull countdown for explosive pulls — the point is to
+            # release at peak, not to hold until the timer runs out.
+            await self._tick(pull_s, "PULL", 0, attempt, 0, attempts,
+                             count_last=0 if explosive else 3)
+            if self._stop_event.is_set():
+                return
+            self._cue("Release")
+            window = self._samples[start:]
+            peak = round(max((f for f, _ in window), default=0.0), 2)
+            self._attempt_peaks.append(peak)
+            if explosive and len(window) > 1:
+                rfd = calculate_rfd(window)
+                self._attempt_rfds.append(rfd)
+                self._cue(f"Attempt {attempt}: {rfd:.0f} kilos per second")
+            else:
+                self._cue(f"Attempt {attempt}: {peak:.1f} kilos")
+            if attempt < attempts:
+                self._cue("Rest")
+                announce = tuple(cp for cp in (60, 30, 10) if cp < rest_s)
+                await self._tick(rest_s, "REST", 0, attempt, 0, attempts, announce=announce)
+
+        self._phase("DONE", 0, 0, attempts, 0, attempts)
+        self._cue("Test complete")
         self._stop_event.set()
 
 

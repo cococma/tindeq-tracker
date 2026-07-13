@@ -7,7 +7,8 @@ import json
 
 from app.api.deps import db
 from app.constants import (
-    EXERCISE_DEFAULTS, EXERCISE_OPTIONS, GRIP_OPTIONS, HAND_OPTIONS,
+    BASELINE_DEFAULTS, EXERCISE_DEFAULTS, EXERCISE_OPTIONS, GRIP_OPTIONS,
+    HAND_OPTIONS,
 )
 from app.repos import tindeq as repo
 
@@ -76,5 +77,6 @@ def capture(request: Request):
         grip_options=GRIP_OPTIONS,
         hand_options=HAND_OPTIONS,
         exercise_defaults_json=json.dumps(EXERCISE_DEFAULTS),
+        baseline_defaults_json=json.dumps(BASELINE_DEFAULTS),
         active="capture",
     )

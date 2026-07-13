@@ -8,6 +8,7 @@
 const $ = (id) => document.getElementById(id);
 
 const TIMER_EXERCISES = ["repeaters", "max_hang"];
+const BASELINE_EXERCISES = ["mvc_test", "rfd_test"];
 let ws = null;
 let chartInit = false;
 let handQueue = [];        // for "both": remaining hands after the current one
@@ -18,12 +19,19 @@ let lastCfg = null;
 function updateFieldVisibility() {
     const ex = $("exercise").value;
     const isTimer = TIMER_EXERCISES.includes(ex);
+    const isBaseline = BASELINE_EXERCISES.includes(ex);
     document.querySelectorAll(".timer-only").forEach(el => el.hidden = !isTimer);
     document.querySelectorAll(".repeaters-only").forEach(el => el.hidden = ex !== "repeaters");
+    document.querySelectorAll(".baseline-only").forEach(el => el.hidden = !isBaseline);
     const d = window.EXERCISE_DEFAULTS[ex];
     if (d) {
         $("onoff").value = d.on_off.join("/");
         $("setsreps").value = d.sets_reps.join("/");
+    }
+    const b = window.BASELINE_DEFAULTS[ex];
+    if (b) {
+        $("attempts").value = b.attempts;
+        $("attemptrest").value = b.rest_s;
     }
 }
 $("exercise").addEventListener("change", updateFieldVisibility);
@@ -53,6 +61,12 @@ function buildConfig(hand) {
         cfg.on_seconds = on; cfg.off_seconds = off;
         cfg.target_sets = sets; cfg.target_reps = reps;
         cfg.set_rest_s = parseInt($("setrest").value, 10) || 180;
+    }
+    if (BASELINE_EXERCISES.includes(ex)) {
+        const b = window.BASELINE_DEFAULTS[ex];
+        cfg.on_seconds = b.pull_s;
+        cfg.target_sets = parseInt($("attempts").value, 10) || b.attempts;
+        cfg.set_rest_s = parseInt($("attemptrest").value, 10) || b.rest_s;
     }
     if (ex === "repeaters") cfg.target_weight_kg = parseFloat($("target").value) || 0;
     return cfg;
@@ -144,10 +158,11 @@ function handleMessage(msg) {
         }
         case "phase":
             $("phase").textContent = msg.phase;
-            $("phase").style.color = msg.phase === "HANG" ? "#8aaa3a" : "#d4b896";
+            $("phase").style.color = ["HANG", "PULL"].includes(msg.phase) ? "#8aaa3a" : "#d4b896";
             $("countdown").textContent = msg.countdown > 0 ? `${msg.countdown}s` : "";
-            $("progress").textContent = msg.total_sets
-                ? `REP ${msg.rep}/${msg.total_reps} · SET ${msg.set}/${msg.total_sets}` : "";
+            $("progress").textContent = msg.total_reps
+                ? `REP ${msg.rep}/${msg.total_reps} · SET ${msg.set}/${msg.total_sets}`
+                : msg.total_sets ? `ATTEMPT ${msg.set}/${msg.total_sets}` : "";
             break;
         case "cue":
             speak(msg.text);

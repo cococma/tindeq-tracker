@@ -29,6 +29,15 @@ HAND_OPTIONS = [
 # Baseline tests are saved to baseline_tests instead of sessions/measurements.
 BASELINE_EXERCISES = ("mvc_test", "rfd_test")
 
+# Guided protocol per baseline test: max-effort attempts separated by full rest.
+# MVC: 5s pulls keep it a strength test, not a fatigue test; 2:30 = full recovery.
+# RFD: 1-2s explosive pulls, no hold at peak; more trials (noisier metric) and
+# long rest — explosive efforts fatigue neural drive before muscles feel tired.
+BASELINE_DEFAULTS = {
+    "mvc_test": {"attempts": 3, "pull_s": 5, "rest_s": 150},
+    "rfd_test": {"attempts": 5, "pull_s": 2, "rest_s": 120},
+}
+
 # Exercises driven by the on/off/sets/reps timer.
 TIMER_EXERCISES = ("repeaters", "max_hang")
 
@@ -59,13 +68,15 @@ EXERCISE_DESCRIPTIONS = {
     ),
     "mvc_test": (
         "MVC BASELINE TEST\n"
-        "Build to maximum force and hold for 3-5 seconds.\n"
-        "This is your strength ceiling — pull as hard as you can."
+        "Guided: {attempts} max-effort pulls, {rest_s}s rest between attempts.\n"
+        "Build to maximum force and hold — this is your strength ceiling.\n"
+        "Best attempt is saved."
     ),
     "rfd_test": (
         "RFD BASELINE TEST\n"
-        "Pull as explosively as possible — peak force in the shortest time.\n"
-        "Hold briefly at peak, then release."
+        "Guided: {attempts} explosive pulls, {rest_s}s rest between attempts.\n"
+        "Pull as fast and hard as possible, then release — no holding at peak.\n"
+        "Best attempt is saved."
     ),
     "force_test": (
         "FORCE TEST\n"

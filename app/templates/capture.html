@@ -50,6 +50,14 @@
             <label for="target">Target force (kg)</label>
             <input id="target" type="number" value="0" step="0.5">
         </div>
+        <div class="field baseline-only">
+            <label for="attempts">Attempts</label>
+            <input id="attempts" type="number" value="3" min="1" max="10">
+        </div>
+        <div class="field baseline-only">
+            <label for="attemptrest">Rest between (s)</label>
+            <input id="attemptrest" type="number" value="150">
+        </div>
         <div class="field wide">
             <label for="notes">Notes</label>
             <input id="notes" placeholder="optional">
@@ -98,6 +106,7 @@
 {% block scripts %}
 <script>
 window.EXERCISE_DEFAULTS = {{ exercise_defaults_json | safe }};
+window.BASELINE_DEFAULTS = {{ baseline_defaults_json | safe }};
 </script>
 <script src="/static/capture.js"></script>
 {% endblock %}
