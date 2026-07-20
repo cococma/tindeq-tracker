@@ -1,5 +1,9 @@
 /* TrainingJournal — forest green / amber dark theme (carried over from the TUI) */
 
+/* Author display rules (e.g. .field { display:flex }) override the browser's
+   built-in [hidden] style, so JS-driven hiding needs this to actually win. */
+[hidden] { display: none !important; }
+
 :root {
     --bg:        #1a1208;
     --panel:     #221a0a;
