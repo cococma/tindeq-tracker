@@ -218,6 +218,15 @@ button.linklike:hover { color: var(--amber); background: none; }
 #add-climb { width: auto; margin-top: 0.25rem; }
 
 /* ── Capture page ── */
+.plan-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    border-color: var(--green);
+}
+.plan-banner-actions { margin-left: auto; }
+.plan-banner-actions a { color: var(--muted); margin-left: 0.75rem; }
 .capture-form {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -336,6 +345,11 @@ details.panel > summary { cursor: pointer; color: var(--ink-bright); }
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* A planned session with a Tindeq setup: clicking it opens capture, prefilled. */
+.cal-plan-go { cursor: pointer; }
+.cal-plan-go:hover { color: var(--green); text-decoration: underline; }
+.plan-rx { font-size: 0.78rem; margin-top: 0.15rem; }
+a.plan-start { color: var(--green); margin-right: 0.5rem; }
 .cal-detail .cal-edit summary { cursor: pointer; font-size: 0.75rem; color: var(--muted); }
 .cal-block-row { border-bottom: 1px solid var(--grid); padding-bottom: 0.75rem; margin-bottom: 0.75rem; }
 

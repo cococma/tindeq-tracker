@@ -66,11 +66,21 @@ function extractProposal(text) {
     }
 }
 
+// A hangboard item's Tindeq setup, so it's clear what the calendar will start.
+function rxLine(rx) {
+    if (!rx || !rx.exercise_type) return "";
+    const parts = [rx.exercise_type.replace(/_/g, " "), rx.grip_type, `${rx.edge_depth_mm || 20}mm`, rx.hand];
+    if (rx.target_sets && rx.target_reps) parts.push(`${rx.target_sets}×${rx.target_reps}`);
+    else if (rx.target_sets) parts.push(`${rx.target_sets} attempts`);
+    if (rx.on_seconds != null && rx.off_seconds != null) parts.push(`${rx.on_seconds}/${rx.off_seconds}s`);
+    return `<div class="proposal-line muted">↳ capture setup: ${parts.filter(Boolean).join(" · ")}</div>`;
+}
+
 function proposalLines(p) {
     const lines = [];
     for (const it of p.items || []) {
-        if (it.action === "add") lines.push(`＋ ${it.date} — ${it.type}: ${it.title || ""}${it.details ? " · " + it.details : ""}`);
-        else if (it.action === "update") lines.push(`~ update item ${it.id}${it.date ? " → " + it.date : ""}${it.type ? " · " + it.type : ""}${it.title ? " · " + it.title : ""}`);
+        if (it.action === "add") lines.push(`＋ ${it.date} — ${it.type}: ${it.title || ""}${it.details ? " · " + it.details : ""}` + rxLine(it.prescription));
+        else if (it.action === "update") lines.push(`~ update item ${it.id}${it.date ? " → " + it.date : ""}${it.type ? " · " + it.type : ""}${it.title ? " · " + it.title : ""}` + rxLine(it.prescription));
         else lines.push(`− remove item ${it.id}`);
     }
     for (const b of p.blocks || []) {

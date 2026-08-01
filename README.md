@@ -66,9 +66,9 @@ Day-to-day management: `scripts/app start|stop|restart|status|logs`
 | Page | What it does |
 |---|---|
 | Dashboard | Weekly + body tiles, Renpho sync/import, training-load and body-trend charts |
-| Capture | Live Tindeq session: setup → connect → force chart + timer + spoken cues → save. Previous sessions (with force–time traces) live in a drop-down here |
+| Capture | Live Tindeq session: setup → connect → force chart + timer + spoken cues → save. Previous sessions (with force–time traces) live in a drop-down here. `?plan=<id>` opens it prefilled from a planned session |
 | Journal | Daily wellness check-in + climbing logging and volume/max-grade trends; workouts and notes too |
-| Calendar | Month grid of everything recorded per day, plus planned items and training blocks (editable; the coach can propose changes to today/future only) |
+| Calendar | Month grid of everything recorded per day, plus planned items and training blocks (editable; the coach can propose changes to today/future only). A planned hangboard item can carry a full Tindeq setup — click it to open Capture ready to go |
 | Trends | MVC/RFD baselines and session peak force per grip × hand |
 | Coach | "What should I do today?" + chat, grounded in your recent training data; can propose calendar updates you apply with one click |
 

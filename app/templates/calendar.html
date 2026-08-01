@@ -3,6 +3,65 @@
 {% block content %}
 {% set cal_url = "/calendar?year=" ~ year ~ "&month=" ~ month %}
 {% set day_url = cal_url ~ "&day=" ~ selected.isoformat() if selected else cal_url %}
+
+{# Capture setup for a planned hangboard item: the fields /capture prefills
+   itself from. Hidden by plan.js unless the item type is hangboard. #}
+{% macro rx_fields(rx) %}
+<div class="field rx-group">
+    <label>Tindeq setup</label>
+    <select name="exercise_type">
+        <option value="">— none —</option>
+        {% for value, label in exercise_options %}
+        <option value="{{ value }}" {{ "selected" if rx and rx.exercise_type == value }}>{{ label }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="field rx-group rx-any">
+    <label>Grip</label>
+    <select name="grip_type">
+        {% for value, label in grip_options %}
+        <option value="{{ value }}" {{ "selected" if rx and rx.grip_type == value }}>{{ label }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="field rx-group rx-any">
+    <label>Hand</label>
+    <select name="hand">
+        {% for value, label in hand_options %}
+        <option value="{{ value }}" {{ "selected" if rx and rx.hand == value }}>{{ label }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="field rx-group rx-any">
+    <label>Edge depth (mm)</label>
+    <input name="edge_depth_mm" type="number" min="4" max="60" value="{{ rx.get('edge_depth_mm', 20) if rx else 20 }}">
+</div>
+<div class="field rx-group rx-timer">
+    <label>Hang (s)</label>
+    <input name="on_seconds" type="number" min="1" max="600" value="{{ rx.get('on_seconds', '') if rx else '' }}">
+</div>
+<div class="field rx-group rx-timer">
+    <label>Rest (s)</label>
+    <input name="off_seconds" type="number" min="0" max="600" value="{{ rx.get('off_seconds', '') if rx else '' }}">
+</div>
+<div class="field rx-group rx-sets">
+    <label data-timer="Sets" data-baseline="Attempts">Sets</label>
+    <input name="target_sets" type="number" min="1" max="20" value="{{ rx.get('target_sets', '') if rx else '' }}">
+</div>
+<div class="field rx-group rx-timer">
+    <label>Reps per set</label>
+    <input name="target_reps" type="number" min="1" max="30" value="{{ rx.get('target_reps', '') if rx else '' }}">
+</div>
+<div class="field rx-group rx-sets">
+    <label data-timer="Set rest (s)" data-baseline="Rest between (s)">Set rest (s)</label>
+    <input name="set_rest_s" type="number" min="0" max="1800" value="{{ rx.get('set_rest_s', '') if rx else '' }}">
+</div>
+<div class="field rx-group rx-repeaters">
+    <label>Target force (kg)</label>
+    <input name="target_weight_kg" type="number" step="0.5" min="0" max="200" value="{{ rx.get('target_weight_kg', '') if rx else '' }}">
+</div>
+{% endmacro %}
+
 <h1>Calendar</h1>
 
 <div class="cal-header">
@@ -43,7 +102,13 @@
             </div>
             {% endif %}
             {% for p in planned_by_day.get(d, []) %}
+            {% if p.prescription %}
+            {# Inside the day link, so steal the click rather than nesting an <a>. #}
+            <div class="cal-plan cal-plan-go" title="{{ rx_summary(p.prescription) }} — click to set up capture"
+                 onclick="event.preventDefault(); event.stopPropagation(); location.href='/capture?plan={{ p.id }}'">▶ {{ p.title }}</div>
+            {% else %}
             <div class="cal-plan" title="{{ p.details or '' }}">▸ {{ p.title }}</div>
+            {% endif %}
             {% endfor %}
         </a>
         {% endfor %}
@@ -126,6 +191,9 @@
         <strong>{{ p.title }}</strong>
         {% if p.source == "coach" %}<span class="badge" title="added by the coach">coach</span>{% endif %}
         <span class="timeline-actions">
+            {% if p.prescription %}
+            <a class="plan-start" href="/capture?plan={{ p.id }}">▶ start in capture</a>
+            {% endif %}
             <form method="post" action="/plan/{{ p.id }}/delete" style="display:inline"
                   onsubmit="return confirm('Remove this planned item?')">
                 <input type="hidden" name="next" value="{{ day_url }}">
@@ -133,10 +201,11 @@
             </form>
         </span>
     </div>
+    {% if p.prescription %}<div class="muted plan-rx">{{ rx_summary(p.prescription) }}</div>{% endif %}
     {% if p.details %}<div class="entry-notes">{{ p.details }}</div>{% endif %}
     <details class="cal-edit">
         <summary class="muted">edit</summary>
-        <form method="post" action="/plan/{{ p.id }}/edit" class="capture-form" style="margin-top:0.5rem">
+        <form method="post" action="/plan/{{ p.id }}/edit" class="capture-form plan-form" style="margin-top:0.5rem">
             <input type="hidden" name="next" value="{{ day_url }}">
             <div class="field">
                 <label>Date</label>
@@ -158,6 +227,7 @@
                 <label>Details</label>
                 <input name="details" value="{{ p.details or '' }}">
             </div>
+            {{ rx_fields(p.prescription) }}
             <div class="field">
                 <label>&nbsp;</label>
                 <button type="submit">Save</button>
@@ -168,7 +238,7 @@
     <p class="muted">Nothing planned.</p>
     {% endfor %}
 
-    <form method="post" action="/plan/new" class="capture-form" style="margin-top:0.75rem">
+    <form method="post" action="/plan/new" class="capture-form plan-form" style="margin-top:0.75rem">
         <input type="hidden" name="next" value="{{ day_url }}">
         <input type="hidden" name="plan_date" value="{{ selected.isoformat() }}">
         <div class="field">
@@ -187,6 +257,7 @@
             <label>Details</label>
             <input name="details" placeholder="optional">
         </div>
+        {{ rx_fields(none) }}
         <div class="field">
             <label>&nbsp;</label>
             <button type="submit">＋ Add to plan</button>
@@ -255,4 +326,12 @@
         </div>
     </form>
 </details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.EXERCISE_DEFAULTS = {{ exercise_defaults_json | safe }};
+window.BASELINE_DEFAULTS = {{ baseline_defaults_json | safe }};
+</script>
+<script src="/static/plan.js?v=1"></script>
 {% endblock %}

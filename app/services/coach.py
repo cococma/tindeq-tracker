@@ -48,12 +48,25 @@ fenced code block tagged calendar-proposal containing JSON in this shape:
 ```calendar-proposal
 {"summary": "one-line description of the change",
  "items": [
-   {"action": "add", "date": "YYYY-MM-DD", "type": "hangboard", "title": "Max hangs 20mm", "details": "5x7s half crimp @ 90% MVC"},
+   {"action": "add", "date": "YYYY-MM-DD", "type": "hangboard", "title": "Max hangs 20mm", "details": "5x7s half crimp @ 90% MVC",
+    "prescription": {"exercise_type": "max_hang", "grip_type": "half_crimp", "hand": "both", "edge_depth_mm": 20,
+                     "on_seconds": 7, "off_seconds": 53, "target_sets": 5, "target_reps": 1, "set_rest_s": 180}},
    {"action": "update", "id": 14, "date": "YYYY-MM-DD", "type": "climbing", "title": "...", "details": "..."},
    {"action": "delete", "id": 15}],
  "blocks": [
    {"action": "add", "name": "Strength block", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "focus": "max finger strength"}]}
 ```
+
+Always give hangboard items a "prescription" — it is the Tindeq capture setup, and \
+it lets the athlete tap the session on their calendar to open the capture page \
+already configured. Fields: exercise_type (repeaters, max_hang, recruitment_pull, \
+mvc_test, rfd_test, min_edge, force_test), grip_type (half_crimp, full_crimp, \
+open_hand, pinch), hand (right, left, both), edge_depth_mm, and — for repeaters and \
+max_hang — on_seconds / off_seconds / target_sets / target_reps / set_rest_s, plus \
+target_weight_kg for repeaters. For mvc_test and rfd_test, target_sets is the number \
+of attempts and set_rest_s the rest between them. Omitted fields fall back to that \
+exercise's defaults. On an update, omit "prescription" to leave the existing setup \
+untouched.
 
 Rules: item "type" must be one of hangboard, climbing, workout, rest, other. Only propose \
 changes for today or future dates — past days are the historical record and can never be \

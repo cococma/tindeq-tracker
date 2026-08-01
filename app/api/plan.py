@@ -1,8 +1,9 @@
 """Training calendar: month grid, planned items, training blocks, coach proposals."""
 
 import calendar as pycal
+import json
 from datetime import date
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,7 +11,12 @@ from pydantic import BaseModel
 
 from app.api.deps import db
 from app.api.pages import render
+from app.constants import (
+    BASELINE_DEFAULTS, EXERCISE_DEFAULTS, EXERCISE_OPTIONS, GRIP_OPTIONS,
+    HAND_OPTIONS,
+)
 from app.repos import plan as repo
+from app.services import prescription
 
 router = APIRouter(include_in_schema=False)
 
@@ -31,11 +37,15 @@ def _parse_item(form):
     if item_type not in PLAN_ITEM_TYPES:
         raise HTTPException(400, f"unknown item type: {item_type}")
     title = (form.get("title") or "").strip()
+    # Only hangboard items carry a capture setup — nothing else can be started
+    # on the capture page.
+    rx = prescription.parse(form) if item_type == "hangboard" else None
     return {
         "plan_date": form.get("plan_date") or date.today().isoformat(),
         "item_type": item_type,
-        "title": title or item_type.title(),
+        "title": title or (prescription.EXERCISE_LABELS[rx["exercise_type"]] if rx else item_type.title()),
         "details": (form.get("details") or "").strip() or None,
+        "prescription": rx,
     }
 
 
@@ -116,6 +126,12 @@ def calendar_page(request: Request, year: int = 0, month: int = 0, day: str = ""
         selected=selected,
         detail=repo.day_detail(conn, selected) if selected else None,
         plan_item_types=PLAN_ITEM_TYPES,
+        exercise_options=EXERCISE_OPTIONS,
+        grip_options=GRIP_OPTIONS,
+        hand_options=HAND_OPTIONS,
+        exercise_defaults_json=json.dumps(EXERCISE_DEFAULTS),
+        baseline_defaults_json=json.dumps(BASELINE_DEFAULTS),
+        rx_summary=prescription.summary,
         active="calendar",
     )
 
@@ -191,6 +207,7 @@ class ProposalItem(BaseModel):
     type: Optional[str] = None
     title: Optional[str] = None
     details: Optional[str] = None
+    prescription: Optional[Dict[str, Any]] = None
 
 
 class ProposalBlock(BaseModel):
@@ -223,11 +240,13 @@ def apply_proposal(proposal: Proposal, conn=Depends(db)):
                 raise HTTPException(400, "item add needs a date and a valid type")
             if it.date < today:
                 _past(it.date.isoformat())
+            rx = prescription.parse(it.prescription) if it.type == "hangboard" else None
             item_ops.append(("add", {
                 "plan_date": it.date,
                 "item_type": it.type,
                 "title": (it.title or "").strip() or it.type.title(),
                 "details": (it.details or "").strip() or None,
+                "prescription": rx,
             }))
         else:
             if not it.id:
@@ -246,12 +265,19 @@ def apply_proposal(proposal: Proposal, conn=Depends(db)):
                 _past(new_date.isoformat())
             if new_type not in PLAN_ITEM_TYPES:
                 raise HTTPException(400, f"unknown item type: {new_type}")
+            if new_type != "hangboard":
+                rx = None
+            elif it.prescription is not None:
+                rx = prescription.parse(it.prescription)
+            else:
+                rx = existing["prescription"]
             item_ops.append(("update", {
                 "id": it.id,
                 "plan_date": new_date,
                 "item_type": new_type,
                 "title": (it.title or "").strip() or existing["title"],
                 "details": it.details.strip() if it.details is not None else existing["details"],
+                "prescription": rx,
             }))
 
     for b in proposal.blocks:

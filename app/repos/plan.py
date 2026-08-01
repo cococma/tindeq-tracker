@@ -1,6 +1,12 @@
 """Data access for the training calendar: planned items and training blocks."""
 
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
+
+
+def _with_prescription(item):
+    """psycopg2 needs the prescription dict wrapped to bind it as JSONB."""
+    rx = item.get("prescription")
+    return {**item, "prescription": Json(rx) if rx else None}
 
 
 # ── Planned items ─────────────────────────────────────────────────────────────
@@ -21,15 +27,15 @@ def get_item(conn, item_id):
 
 
 def create_item(conn, item, source="user"):
-    """item: dict(plan_date, item_type, title, details)."""
+    """item: dict(plan_date, item_type, title, details, prescription)."""
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO planned_items (plan_date, item_type, title, details, source)
-            VALUES (%(plan_date)s, %(item_type)s, %(title)s, %(details)s, %(source)s)
+            INSERT INTO planned_items (plan_date, item_type, title, details, prescription, source)
+            VALUES (%(plan_date)s, %(item_type)s, %(title)s, %(details)s, %(prescription)s, %(source)s)
             RETURNING id
             """,
-            {**item, "source": source},
+            {**_with_prescription(item), "source": source},
         )
         item_id = cur.fetchone()[0]
     conn.commit()
@@ -42,10 +48,11 @@ def update_item(conn, item_id, item):
             """
             UPDATE planned_items
             SET plan_date = %(plan_date)s, item_type = %(item_type)s,
-                title = %(title)s, details = %(details)s, updated_at = NOW()
+                title = %(title)s, details = %(details)s,
+                prescription = %(prescription)s, updated_at = NOW()
             WHERE id = %(id)s
             """,
-            {**item, "id": item_id},
+            {**_with_prescription(item), "id": item_id},
         )
         updated = cur.rowcount
     conn.commit()
@@ -133,20 +140,21 @@ def apply_proposal(conn, item_ops, block_ops):
             if action == "add":
                 cur.execute(
                     """
-                    INSERT INTO planned_items (plan_date, item_type, title, details, source)
-                    VALUES (%(plan_date)s, %(item_type)s, %(title)s, %(details)s, 'coach')
+                    INSERT INTO planned_items (plan_date, item_type, title, details, prescription, source)
+                    VALUES (%(plan_date)s, %(item_type)s, %(title)s, %(details)s, %(prescription)s, 'coach')
                     """,
-                    p,
+                    _with_prescription(p),
                 )
             elif action == "update":
                 cur.execute(
                     """
                     UPDATE planned_items
                     SET plan_date = %(plan_date)s, item_type = %(item_type)s,
-                        title = %(title)s, details = %(details)s, updated_at = NOW()
+                        title = %(title)s, details = %(details)s,
+                        prescription = %(prescription)s, updated_at = NOW()
                     WHERE id = %(id)s
                     """,
-                    p,
+                    _with_prescription(p),
                 )
             else:
                 cur.execute("DELETE FROM planned_items WHERE id = %(id)s", p)

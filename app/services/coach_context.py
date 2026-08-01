@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from psycopg2.extras import RealDictCursor
 
 from app.constants import GRIP_OPTIONS
+from app.services import prescription
 
 GRIP_LABELS = dict(GRIP_OPTIONS)
 
@@ -286,7 +287,7 @@ def _load_summary(conn):
 
 def _plan(conn):
     items = _q(conn, """
-        SELECT id, plan_date, item_type, title, details, source
+        SELECT id, plan_date, item_type, title, details, prescription, source
         FROM planned_items
         WHERE plan_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 21
         ORDER BY plan_date, id
@@ -308,6 +309,8 @@ def _plan(conn):
         line = f"- {r['plan_date']} [id {r['id']}]: {r['item_type']} — \"{r['title']}\""
         if r["details"]:
             line += f" ({r['details']})"
+        if r["prescription"]:
+            line += f" [capture setup: {prescription.summary(r['prescription'])}]"
         if r["source"] == "coach":
             line += " [planned by you]"
         lines.append(line)

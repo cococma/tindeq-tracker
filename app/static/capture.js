@@ -37,6 +37,32 @@ function updateFieldVisibility() {
 $("exercise").addEventListener("change", updateFieldVisibility);
 updateFieldVisibility();
 
+// /capture?plan=<id> arrives with the planned session's setup. Fill the form
+// from it — after updateFieldVisibility(), which resets the protocol fields to
+// the exercise's defaults.
+function applyPrescription(rx) {
+    if (!rx || !rx.exercise_type) return;
+    $("exercise").value = rx.exercise_type;
+    updateFieldVisibility();
+    const set = (id, value) => { if (value !== undefined && value !== null) $(id).value = value; };
+    set("grip", rx.grip_type);
+    set("hand", rx.hand);
+    set("edge", rx.edge_depth_mm);
+    set("notes", rx.notes);
+    if (TIMER_EXERCISES.includes(rx.exercise_type)) {
+        if (rx.on_seconds != null && rx.off_seconds != null) $("onoff").value = `${rx.on_seconds}/${rx.off_seconds}`;
+        if (rx.target_sets != null && rx.target_reps != null) $("setsreps").value = `${rx.target_sets}/${rx.target_reps}`;
+        set("setrest", rx.set_rest_s);
+        set("target", rx.target_weight_kg);
+    }
+    if (BASELINE_EXERCISES.includes(rx.exercise_type)) {
+        // Baselines reuse target_sets/set_rest_s as attempts and rest between.
+        set("attempts", rx.target_sets);
+        set("attemptrest", rx.set_rest_s);
+    }
+}
+applyPrescription(window.PLAN_PRESCRIPTION);
+
 function parsePair(text, fallback) {
     const parts = text.split("/").map(s => parseInt(s.trim(), 10));
     return (parts.length === 2 && parts.every(Number.isFinite)) ? parts : fallback;

@@ -11,6 +11,7 @@ from app.constants import (
     HAND_OPTIONS,
 )
 from app.repos import metrics as metrics_repo
+from app.repos import plan as plan_repo
 from app.repos import tindeq as repo
 from app.services import renpho_sync
 
@@ -76,7 +77,16 @@ def trends(request: Request):
 
 
 @router.get("/capture", response_class=HTMLResponse)
-def capture(request: Request, conn=Depends(db)):
+def capture(request: Request, plan: int = 0, conn=Depends(db)):
+    # ?plan=<id> opens the page with a planned session's setup already filled in
+    # (the calendar links here). An unknown or setup-less item just renders the
+    # normal blank form.
+    plan_item = plan_repo.get_item(conn, plan) if plan else None
+    if plan_item and not plan_item.get("prescription"):
+        plan_item = None
+    if plan_item and not plan_item["prescription"].get("notes"):
+        # What was planned is worth carrying into the session's notes.
+        plan_item["prescription"]["notes"] = plan_item["details"] or plan_item["title"]
     return render(
         request,
         "capture.html",
@@ -85,6 +95,8 @@ def capture(request: Request, conn=Depends(db)):
         hand_options=HAND_OPTIONS,
         exercise_defaults_json=json.dumps(EXERCISE_DEFAULTS),
         baseline_defaults_json=json.dumps(BASELINE_DEFAULTS),
+        plan_item=plan_item,
+        plan_prescription_json=json.dumps(plan_item["prescription"] if plan_item else None),
         recent=repo.list_sessions(conn, limit=30),
         active="capture",
     )

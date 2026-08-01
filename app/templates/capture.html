@@ -3,6 +3,18 @@
 {% block content %}
 <h1>Capture</h1>
 
+{% if plan_item %}
+<div class="panel plan-banner">
+    <span class="badge kind-hangboard">planned</span>
+    <strong>{{ plan_item.title }}</strong>
+    <span class="muted">{{ plan_item.plan_date.strftime("%a %b %d") }}{{ " · " ~ plan_item.details if plan_item.details }}</span>
+    <span class="plan-banner-actions">
+        <a href="/calendar?year={{ plan_item.plan_date.year }}&month={{ plan_item.plan_date.month }}&day={{ plan_item.plan_date.isoformat() }}">calendar</a>
+        <a href="/capture">clear</a>
+    </span>
+</div>
+{% endif %}
+
 <!-- ── Setup ── -->
 <div id="setup" class="panel">
     <div class="capture-form">
@@ -147,6 +159,7 @@
 <script>
 window.EXERCISE_DEFAULTS = {{ exercise_defaults_json | safe }};
 window.BASELINE_DEFAULTS = {{ baseline_defaults_json | safe }};
+window.PLAN_PRESCRIPTION = {{ plan_prescription_json | safe }};
 </script>
-<script src="/static/capture.js?v=2"></script>
+<script src="/static/capture.js?v=3"></script>
 {% endblock %}
