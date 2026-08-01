@@ -1,10 +1,11 @@
-"""Body metrics: page, chart series, Renpho sync + CSV import."""
+"""Body metrics: chart series, Renpho sync + CSV import (shown on the Dashboard)."""
+
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 from app.api.deps import db
-from app.api.pages import render
 from app.repos import metrics as repo
 from app.services import renpho_sync
 from app.services.renpho_csv import parse_renpho_csv
@@ -12,24 +13,11 @@ from app.services.renpho_csv import parse_renpho_csv
 router = APIRouter(include_in_schema=False)
 
 
-@router.get("/body", response_class=HTMLResponse)
-def body_page(request: Request, msg: str = "", conn=Depends(db)):
-    return render(
-        request, "body.html",
-        latest=repo.latest_metrics(conn),
-        metrics=repo.available_metrics(conn),
-        sync_state=repo.get_sync_state(conn, "renpho"),
-        creds_configured=renpho_sync.credentials_configured(),
-        msg=msg,
-        active="body",
-    )
-
-
 @router.post("/body/sync")
 async def run_sync(request: Request):
     import asyncio
     result = await asyncio.to_thread(renpho_sync.sync)
-    return RedirectResponse(f"/body?msg={result['status']}", status_code=303)
+    return RedirectResponse(f"/?msg={quote(result['status'])}", status_code=303)
 
 
 @router.post("/body/import")
@@ -45,7 +33,7 @@ async def import_csv(file: UploadFile, conn=Depends(db)):
             msg += f" · {skipped} rows skipped"
     except Exception as e:
         msg = f"Import failed: {e}"
-    return RedirectResponse(f"/body?msg={msg}", status_code=303)
+    return RedirectResponse(f"/?msg={quote(msg)}", status_code=303)
 
 
 @router.get("/api/metrics/series")

@@ -56,4 +56,14 @@ const TJ = {
     empty(el, message) {
         el.innerHTML = `<div class="empty">${message}</div>`;
     },
+
+    // Defer chart work until the element scrolls near the viewport.
+    whenVisible(el, fn) {
+        new IntersectionObserver((entries, obs) => {
+            if (entries[0].isIntersecting) {
+                obs.disconnect();
+                fn();
+            }
+        }, { rootMargin: "200px" }).observe(el);
+    },
 };

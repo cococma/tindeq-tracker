@@ -2,13 +2,13 @@
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.deps import db
 from app.api.pages import render
+from app.api.plan import safe_next
 from app.repos import journal as repo
-from app.repos import tindeq as tindeq_repo
 
 router = APIRouter(include_in_schema=False)
 
@@ -79,18 +79,9 @@ def _parse_entry_form(form):
 
 @router.get("/journal", response_class=HTMLResponse)
 def journal(request: Request, conn=Depends(db)):
-    entries = repo.list_entries(conn, limit=100)
-    hangboard = tindeq_repo.list_sessions(conn, limit=100)
-
-    # Merge journal entries and hangboard sessions into one timeline, newest first.
-    items = [{"kind": "entry", "date": e["entry_date"], "e": e} for e in entries]
-    items += [{"kind": "hangboard", "date": s["started_at"].date(), "e": s} for s in hangboard]
-    items.sort(key=lambda i: (i["date"], i["e"].get("id", 0)), reverse=True)
-
     today = date.today()
     return render(
         request, "journal.html",
-        items=items,
         today=today.isoformat(),
         wellness_today=repo.get_wellness(conn, today),
         active="journal",
@@ -98,10 +89,12 @@ def journal(request: Request, conn=Depends(db)):
 
 
 @router.get("/journal/new", response_class=HTMLResponse)
-def new_entry(request: Request):
+def new_entry(request: Request, type: str = "note", date_: str = Query("", alias="date"), next: str = ""):
     return render(
         request, "entry_form.html",
-        entry=None, today=date.today().isoformat(),
+        entry=None, today=date_ or date.today().isoformat(),
+        preselect_type=type if type in ("climbing", "workout", "note") else "note",
+        next=safe_next(next, fallback="/journal"),
         climb_styles=CLIMB_STYLES, disciplines=DISCIPLINES, workout_types=WORKOUT_TYPES,
         active="journal",
     )
@@ -112,17 +105,19 @@ async def create_entry(request: Request, conn=Depends(db)):
     form = await request.form()
     entry, climbing, climbs, workout = _parse_entry_form(form)
     repo.create_entry(conn, entry, climbing=climbing, climbs=climbs, workout=workout)
-    return RedirectResponse("/journal", status_code=303)
+    return RedirectResponse(safe_next(form.get("next"), fallback="/journal"), status_code=303)
 
 
 @router.get("/journal/{entry_id}/edit", response_class=HTMLResponse)
-def edit_entry(request: Request, entry_id: int, conn=Depends(db)):
+def edit_entry(request: Request, entry_id: int, next: str = "", conn=Depends(db)):
     entry = repo.get_entry(conn, entry_id)
     if entry is None:
         raise HTTPException(404)
     return render(
         request, "entry_form.html",
         entry=entry, today=date.today().isoformat(),
+        preselect_type=entry["entry_type"],
+        next=safe_next(next, fallback="/journal"),
         climb_styles=CLIMB_STYLES, disciplines=DISCIPLINES, workout_types=WORKOUT_TYPES,
         active="journal",
     )
@@ -135,13 +130,14 @@ async def save_entry(request: Request, entry_id: int, conn=Depends(db)):
     form = await request.form()
     entry, climbing, climbs, workout = _parse_entry_form(form)
     repo.update_entry(conn, entry_id, entry, climbing=climbing, climbs=climbs, workout=workout)
-    return RedirectResponse("/journal", status_code=303)
+    return RedirectResponse(safe_next(form.get("next"), fallback="/journal"), status_code=303)
 
 
 @router.post("/journal/{entry_id}/delete")
-def remove_entry(entry_id: int, conn=Depends(db)):
+async def remove_entry(request: Request, entry_id: int, conn=Depends(db)):
+    form = await request.form()
     repo.delete_entry(conn, entry_id)
-    return RedirectResponse("/journal", status_code=303)
+    return RedirectResponse(safe_next(form.get("next"), fallback="/journal"), status_code=303)
 
 
 @router.post("/journal/wellness")
@@ -159,21 +155,11 @@ async def save_wellness(request: Request, conn=Depends(db)):
     return RedirectResponse("/journal", status_code=303)
 
 
-@router.get("/climbing", response_class=HTMLResponse)
-def climbing_page(request: Request):
-    return render(request, "climbing.html", active="climbing")
-
-
 # ── JSON for charts ───────────────────────────────────────────────────────────
 
 @router.get("/api/climbing/volume")
 def climbing_volume(conn=Depends(db)):
     return {"climbs": repo.climb_volume(conn)}
-
-
-@router.get("/load", response_class=HTMLResponse)
-def load_page(request: Request):
-    return render(request, "load.html", active="load")
 
 
 @router.get("/api/load/summary")

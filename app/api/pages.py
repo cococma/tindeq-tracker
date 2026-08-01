@@ -10,7 +10,9 @@ from app.constants import (
     BASELINE_DEFAULTS, EXERCISE_DEFAULTS, EXERCISE_OPTIONS, GRIP_OPTIONS,
     HAND_OPTIONS,
 )
+from app.repos import metrics as metrics_repo
 from app.repos import tindeq as repo
+from app.services import renpho_sync
 
 router = APIRouter(include_in_schema=False)
 
@@ -38,15 +40,16 @@ def render(request: Request, name: str, **ctx):
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, conn=Depends(db)):
-    stats = repo.dashboard_stats(conn)
-    recent = repo.list_sessions(conn, limit=8)
-    return render(request, "dashboard.html", stats=stats, recent=recent, active="dashboard")
-
-
-@router.get("/sessions", response_class=HTMLResponse)
-def sessions(request: Request, conn=Depends(db)):
-    return render(request, "sessions.html", sessions=repo.list_sessions(conn), active="sessions")
+def dashboard(request: Request, msg: str = "", conn=Depends(db)):
+    return render(
+        request, "dashboard.html",
+        stats=repo.dashboard_stats(conn),
+        latest=metrics_repo.latest_metrics(conn),
+        sync_state=metrics_repo.get_sync_state(conn, "renpho"),
+        creds_configured=renpho_sync.credentials_configured(),
+        msg=msg,
+        active="dashboard",
+    )
 
 
 @router.get("/sessions/{session_id}", response_class=HTMLResponse)
@@ -57,14 +60,14 @@ def session_detail(request: Request, session_id: int, conn=Depends(db)):
     duration_s = None
     if session["ended_at"] and session["started_at"]:
         duration_s = int((session["ended_at"] - session["started_at"]).total_seconds())
-    return render(request, "session_detail.html", session=session, duration_s=duration_s, active="sessions")
+    return render(request, "session_detail.html", session=session, duration_s=duration_s, active="capture")
 
 
 @router.post("/sessions/{session_id}/delete")
 def delete_session(session_id: int, conn=Depends(db)):
     if not repo.delete_session(conn, session_id):
         raise HTTPException(404, "session not found")
-    return RedirectResponse("/sessions", status_code=303)
+    return RedirectResponse("/capture", status_code=303)
 
 
 @router.get("/trends", response_class=HTMLResponse)
@@ -73,7 +76,7 @@ def trends(request: Request):
 
 
 @router.get("/capture", response_class=HTMLResponse)
-def capture(request: Request):
+def capture(request: Request, conn=Depends(db)):
     return render(
         request,
         "capture.html",
@@ -82,5 +85,6 @@ def capture(request: Request):
         hand_options=HAND_OPTIONS,
         exercise_defaults_json=json.dumps(EXERCISE_DEFAULTS),
         baseline_defaults_json=json.dumps(BASELINE_DEFAULTS),
+        recent=repo.list_sessions(conn, limit=30),
         active="capture",
     )

@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}Calendar · TrainingJournal{% endblock %}
+{% block content %}
+{% set cal_url = "/calendar?year=" ~ year ~ "&month=" ~ month %}
+{% set day_url = cal_url ~ "&day=" ~ selected.isoformat() if selected else cal_url %}
+<h1>Calendar</h1>
+
+<div class="cal-header">
+    <a class="btn" href="{{ prev_url }}">‹</a>
+    <span class="cal-title">{{ month_label }}</span>
+    <a class="btn" href="{{ next_url }}">›</a>
+    <a class="btn" href="/calendar">today</a>
+</div>
+
+<div class="cal-days cal-weekdays">
+    {% for wd in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+    <div>{{ wd }}</div>
+    {% endfor %}
+</div>
+
+{% for week in weeks %}
+<div class="cal-week">
+    {% if week.bands %}
+    <div class="cal-bands">
+        {% for b in week.bands %}
+        <div class="cal-band {{ 'cont-l' if b.cont_left }} {{ 'cont-r' if b.cont_right }}"
+             style="grid-column: {{ b.col_start }} / {{ b.col_end }}" title="{{ b.focus or '' }}">{{ b.name }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="cal-days">
+        {% for d in week.days %}
+        {% set f = facts.get(d) %}
+        <a class="cal-day {{ 'out' if d.month != month }} {{ 'today' if d == today }} {{ 'selected' if d == selected }}"
+           href="{{ cal_url }}&day={{ d.isoformat() }}">
+            <div class="cal-date">{{ d.day }}</div>
+            {% if f %}
+            <div class="cal-marks">
+                {% if f.hangboard %}<span class="cal-mark kind-hangboard">hb{{ "×%d"|format(f.hangboard) if f.hangboard > 1 }}</span>{% endif %}
+                {% for t in f.entry_types %}<span class="cal-mark kind-{{ t }}">{{ "climb" if t == "climbing" else t }}</span>{% endfor %}
+                {% if f.checkin %}<span class="cal-mark kind-checkin" title="check-in saved">✓</span>{% endif %}
+                {% if f.weight %}<span class="cal-mark kind-weight" title="weight logged">kg</span>{% endif %}
+            </div>
+            {% endif %}
+            {% for p in planned_by_day.get(d, []) %}
+            <div class="cal-plan" title="{{ p.details or '' }}">▸ {{ p.title }}</div>
+            {% endfor %}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+
+{% if selected %}
+<div class="panel cal-detail">
+    <h3 style="margin-top:0">{{ selected.strftime("%A, %B %d %Y") }}</h3>
+
+    {% if detail.hangboard %}
+    {% for s in detail.hangboard %}
+    <div class="timeline-head">
+        <span class="badge kind-hangboard">hangboard</span>
+        <a href="/sessions/{{ s.id }}"><strong>{{ exercise_labels.get(s.exercise_type, s.exercise_type) }}</strong></a>
+        <span class="muted">
+            {{ s.started_at.strftime("%H:%M") }} · {{ grip_labels.get(s.grip_type, s.grip_type) }} · {{ s.hand }}
+            · peak {{ "%.1f"|format(s.peak_force_kg) }} kg
+        </span>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% for e in detail.entries %}
+    <div class="timeline-head" style="margin-top:0.4rem">
+        <span class="badge kind-{{ e.entry_type }}">{{ e.entry_type }}</span>
+        <strong>{{ e.title or (e.entry_type|title) }}</strong>
+        {% if e.entry_type == "climbing" and e.climbing %}
+        <span class="muted">{{ e.climbing.discipline }}{{ " · %d min"|format(e.climbing.duration_min) if e.climbing.duration_min }}{{ " · RPE %d"|format(e.climbing.session_rpe) if e.climbing.session_rpe }}</span>
+        {% elif e.entry_type == "workout" and e.workout %}
+        <span class="muted">{{ e.workout.workout_type }}{{ " · %d min"|format(e.workout.duration_min) if e.workout.duration_min }}{{ " · RPE %d"|format(e.workout.session_rpe) if e.workout.session_rpe }}</span>
+        {% endif %}
+        <span class="timeline-actions">
+            <a href="/journal/{{ e.id }}/edit?next={{ day_url | urlencode }}">edit</a>
+            <form method="post" action="/journal/{{ e.id }}/delete" style="display:inline"
+                  onsubmit="return confirm('Delete this entry?')">
+                <input type="hidden" name="next" value="{{ day_url }}">
+                <button type="submit" class="linklike">delete</button>
+            </form>
+        </span>
+    </div>
+    {% if e.climbs %}
+    <div>
+        {% for c in e.climbs %}
+        <span class="badge">{{ c.grade }}{{ " · " + c.style if c.style }}{{ " ×%d"|format(c.attempts) if c.attempts and c.attempts > 1 }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if e.notes %}<div class="entry-notes">{{ e.notes }}</div>{% endif %}
+    {% endfor %}
+
+    {% if detail.wellness or detail.weight %}
+    <div class="muted" style="margin-top:0.5rem">
+        {% if detail.wellness %}
+        {% set w = detail.wellness %}
+        check-in:
+        {{ "sleep %.1fh"|format(w.sleep_hours) if w.sleep_hours is not none }}{{ " · soreness %d/5"|format(w.soreness) if w.soreness }}{{ " · fatigue %d/5"|format(w.fatigue) if w.fatigue }}{{ " · motivation %d/5"|format(w.motivation) if w.motivation }}
+        {% endif %}
+        {% if detail.weight %} · weight {{ "%.1f"|format(detail.weight) }} kg{% endif %}
+    </div>
+    {% endif %}
+
+    {% if not (detail.hangboard or detail.entries or detail.wellness or detail.weight) %}
+    <p class="muted">Nothing recorded this day.</p>
+    {% endif %}
+
+    <div class="muted" style="margin-top:0.5rem; font-size:0.8rem">
+        Log for this day:
+        <a href="/journal/new?type=climbing&date={{ selected.isoformat() }}">climbing</a> ·
+        <a href="/journal/new?type=workout&date={{ selected.isoformat() }}">workout</a> ·
+        <a href="/journal/new?type=note&date={{ selected.isoformat() }}">note</a>
+    </div>
+
+    <!-- ── Plan for this day ── -->
+    <h3>Plan</h3>
+    {% for p in detail.planned %}
+    <div class="timeline-head">
+        <span class="badge kind-{{ 'note' if p.item_type in ('rest', 'other') else p.item_type }}">{{ p.item_type }}</span>
+        <strong>{{ p.title }}</strong>
+        {% if p.source == "coach" %}<span class="badge" title="added by the coach">coach</span>{% endif %}
+        <span class="timeline-actions">
+            <form method="post" action="/plan/{{ p.id }}/delete" style="display:inline"
+                  onsubmit="return confirm('Remove this planned item?')">
+                <input type="hidden" name="next" value="{{ day_url }}">
+                <button type="submit" class="linklike">delete</button>
+            </form>
+        </span>
+    </div>
+    {% if p.details %}<div class="entry-notes">{{ p.details }}</div>{% endif %}
+    <details class="cal-edit">
+        <summary class="muted">edit</summary>
+        <form method="post" action="/plan/{{ p.id }}/edit" class="capture-form" style="margin-top:0.5rem">
+            <input type="hidden" name="next" value="{{ day_url }}">
+            <div class="field">
+                <label>Date</label>
+                <input name="plan_date" type="date" value="{{ p.plan_date.isoformat() }}">
+            </div>
+            <div class="field">
+                <label>Type</label>
+                <select name="item_type">
+                    {% for t in plan_item_types %}
+                    <option value="{{ t }}" {{ "selected" if p.item_type == t }}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>Title</label>
+                <input name="title" value="{{ p.title }}">
+            </div>
+            <div class="field wide">
+                <label>Details</label>
+                <input name="details" value="{{ p.details or '' }}">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="submit">Save</button>
+            </div>
+        </form>
+    </details>
+    {% else %}
+    <p class="muted">Nothing planned.</p>
+    {% endfor %}
+
+    <form method="post" action="/plan/new" class="capture-form" style="margin-top:0.75rem">
+        <input type="hidden" name="next" value="{{ day_url }}">
+        <input type="hidden" name="plan_date" value="{{ selected.isoformat() }}">
+        <div class="field">
+            <label>Type</label>
+            <select name="item_type">
+                {% for t in plan_item_types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label>Title</label>
+            <input name="title" placeholder="e.g. Max hangs 20mm">
+        </div>
+        <div class="field wide">
+            <label>Details</label>
+            <input name="details" placeholder="optional">
+        </div>
+        <div class="field">
+            <label>&nbsp;</label>
+            <button type="submit">＋ Add to plan</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<!-- ── Training blocks ── -->
+<details class="panel">
+    <summary>Training blocks{{ " (%d)"|format(blocks|length) if blocks }}</summary>
+    {% for b in blocks %}
+    <form method="post" action="/plan/blocks/{{ b.id }}/edit" class="capture-form cal-block-row">
+        <input type="hidden" name="next" value="{{ day_url }}">
+        <div class="field">
+            <label>Name</label>
+            <input name="name" value="{{ b.name }}">
+        </div>
+        <div class="field">
+            <label>Start</label>
+            <input name="start_date" type="date" value="{{ b.start_date.isoformat() }}">
+        </div>
+        <div class="field">
+            <label>End</label>
+            <input name="end_date" type="date" value="{{ b.end_date.isoformat() }}">
+        </div>
+        <div class="field wide">
+            <label>Focus</label>
+            <input name="focus" value="{{ b.focus or '' }}">
+        </div>
+        <div class="field">
+            <label>&nbsp;</label>
+            <div style="display:flex; gap:0.5rem">
+                <button type="submit">Save</button>
+                <button type="submit" class="linklike"
+                        formaction="/plan/blocks/{{ b.id }}/delete"
+                        onclick="return confirm('Delete this training block?')">delete</button>
+            </div>
+        </div>
+    </form>
+    {% else %}
+    <p class="muted">No training blocks yet — a block is a labeled date range (e.g. “Strength · 4 weeks”) drawn across the calendar.</p>
+    {% endfor %}
+    <h3>New block</h3>
+    <form method="post" action="/plan/blocks/new" class="capture-form">
+        <input type="hidden" name="next" value="{{ day_url }}">
+        <div class="field">
+            <label>Name</label>
+            <input name="name" placeholder="e.g. Strength block" required>
+        </div>
+        <div class="field">
+            <label>Start</label>
+            <input name="start_date" type="date" required>
+        </div>
+        <div class="field">
+            <label>End</label>
+            <input name="end_date" type="date" required>
+        </div>
+        <div class="field wide">
+            <label>Focus</label>
+            <input name="focus" placeholder="optional">
+        </div>
+        <div class="field">
+            <label>&nbsp;</label>
+            <button type="submit">＋ Add block</button>
+        </div>
+    </form>
+</details>
+{% endblock %}

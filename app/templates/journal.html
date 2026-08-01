@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Journal · TrainingJournal{% endblock %}
 {% block content %}
-<h1>Journal <a class="btn" style="float:right" href="/journal/new">＋ New entry</a></h1>
+<h1>Journal</h1>
 
 <!-- ── Wellness quick-entry ── -->
 <div class="panel">
@@ -44,64 +44,96 @@
     </form>
 </div>
 
-<!-- ── Timeline ── -->
-<h2>Timeline</h2>
-{% if items %}
-{% for item in items %}
-<div class="panel timeline-item">
-    {% if item.kind == "hangboard" %}
-        {% set s = item.e %}
-        <div class="timeline-head">
-            <span class="badge kind-hangboard">hangboard</span>
-            <a href="/sessions/{{ s.id }}"><strong>{{ exercise_labels.get(s.exercise_type, s.exercise_type) }}</strong></a>
-            <span class="muted">{{ s.started_at.strftime("%a %b %d, %H:%M") }}</span>
-        </div>
-        <div class="muted">
-            {{ grip_labels.get(s.grip_type, s.grip_type) }} · {{ s.hand }} · {{ s.edge_depth_mm }}mm
-            · peak {{ "%.1f"|format(s.peak_force_kg) }} kg
-        </div>
-    {% else %}
-        {% set e = item.e %}
-        <div class="timeline-head">
-            <span class="badge kind-{{ e.entry_type }}">{{ e.entry_type }}</span>
-            <strong>{{ e.title or (e.entry_type|title) }}</strong>
-            <span class="muted">{{ e.entry_date.strftime("%a %b %d") }}</span>
-            <span class="timeline-actions">
-                <a href="/journal/{{ e.id }}/edit">edit</a>
-                <form method="post" action="/journal/{{ e.id }}/delete" style="display:inline"
-                      onsubmit="return confirm('Delete this entry?')">
-                    <button type="submit" class="linklike">delete</button>
-                </form>
-            </span>
-        </div>
-        {% if e.entry_type == "climbing" and e.climbing %}
-        <div class="muted">
-            {{ e.climbing.discipline }} · {{ e.climbing.location_type }}{{ " · " + e.climbing.location if e.climbing.location }}
-            {{ " · %d min"|format(e.climbing.duration_min) if e.climbing.duration_min }}
-            {{ " · feel %d/5"|format(e.climbing.feel_rating) if e.climbing.feel_rating }}
-            {{ " · skin %d/5"|format(e.climbing.skin_rating) if e.climbing.skin_rating }}
-            {{ " · RPE %d"|format(e.climbing.session_rpe) if e.climbing.session_rpe }}
-        </div>
-        {% if e.climbs %}
-        <div>
-            {% for c in e.climbs %}
-            <span class="badge">{{ c.grade }}{{ " · " + c.style if c.style }}{{ " ×%d"|format(c.attempts) if c.attempts and c.attempts > 1 }}</span>
-            {% endfor %}
-        </div>
-        {% endif %}
-        {% elif e.entry_type == "workout" and e.workout %}
-        <div class="muted">
-            {{ e.workout.workout_type }}
-            {{ " · %d min"|format(e.workout.duration_min) if e.workout.duration_min }}
-            {{ " · RPE %d"|format(e.workout.session_rpe) if e.workout.session_rpe }}
-        </div>
-        {% if e.workout.details and e.workout.details.text %}<div>{{ e.workout.details.text }}</div>{% endif %}
-        {% endif %}
-        {% if e.notes %}<div class="entry-notes">{{ e.notes }}</div>{% endif %}
-    {% endif %}
-</div>
-{% endfor %}
-{% else %}
-<p class="muted">Nothing here yet — add an entry or record a hangboard session.</p>
-{% endif %}
+<!-- ── Climbing ── -->
+<h2>Climbing <a class="btn" style="float:right" href="/journal/new?type=climbing">＋ Log climbing session</a></h2>
+
+<h3>Volume by grade, per week</h3>
+<p class="muted">Sends only; stacked by grade (darker = harder).</p>
+<div id="volume" class="chart"></div>
+
+<h3>Max grade sent</h3>
+<div id="maxgrade" class="chart"></div>
+
+<p class="muted">
+    Also: <a href="/journal/new?type=workout">log a workout</a> ·
+    <a href="/journal/new?type=note">add a note</a> ·
+    past days live on the <a href="/calendar">calendar</a>.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function isoWeekStart(d) {
+    const dt = new Date(d);
+    const day = (dt.getDay() + 6) % 7; // Mon = 0
+    dt.setDate(dt.getDate() - day);
+    return dt.toISOString().slice(0, 10);
+}
+
+(async () => {
+    const res = await fetch("/api/climbing/volume");
+    const climbs = (await res.json()).climbs;
+    const volEl = document.getElementById("volume");
+    const maxEl = document.getElementById("maxgrade");
+    if (!climbs.length) {
+        TJ.empty(volEl, "No climbs logged yet — log a climbing session above.");
+        TJ.empty(maxEl, "No climbs logged yet.");
+        return;
+    }
+
+    const sends = climbs.filter(c => c.sent);
+
+    // ── Volume by grade per week: stacked bars, single-hue ordinal ramp ──
+    const grades = [...new Set(sends.map(c => c.grade))]
+        .sort((a, b) => (sends.find(c => c.grade === a).grade_rank ?? 99) -
+                        (sends.find(c => c.grade === b).grade_rank ?? 99));
+    const weeks = [...new Set(sends.map(c => isoWeekStart(c.entry_date)))].sort();
+
+    // Sequential ramp: one hue (green), light -> dark with grade difficulty
+    const ramp = (i, n) => {
+        const t = n <= 1 ? 1 : i / (n - 1);
+        const L = 78 - t * 40;          // lightness 78% -> 38%
+        return `hsl(84, 45%, ${L}%)`;
+    };
+
+    const volTraces = grades.map((g, i) => ({
+        type: "bar",
+        name: g,
+        x: weeks,
+        y: weeks.map(w => sends.filter(c => c.grade === g && isoWeekStart(c.entry_date) === w).length),
+        marker: { color: ramp(i, grades.length), line: { color: TJ.surface, width: 2 } },
+        hovertemplate: `${g}: %{y}<extra></extra>`,
+    }));
+    Plotly.newPlot(volEl, volTraces, TJ.layout({
+        barmode: "stack",
+        xaxis: TJ.axis({ type: "category", title: "week" }),
+        yaxis: TJ.axis({ title: "sends" }),
+    }), TJ.config);
+
+    // ── Max grade rank over time ──
+    const ranked = sends.filter(c => c.grade_rank != null);
+    if (!ranked.length) { TJ.empty(maxEl, "No recognized grades yet."); return; }
+    const byDate = new Map();
+    for (const c of ranked) {
+        const cur = byDate.get(c.entry_date);
+        if (!cur || c.grade_rank > cur.grade_rank) byDate.set(c.entry_date, c);
+    }
+    const pts = [...byDate.values()].sort((a, b) => a.entry_date.localeCompare(b.entry_date));
+    Plotly.newPlot(maxEl, [{
+        x: pts.map(p => p.entry_date),
+        y: pts.map(p => p.grade_rank),
+        text: pts.map(p => p.grade),
+        mode: "lines+markers+text",
+        textposition: "top center",
+        textfont: { color: TJ.ink, size: 11 },
+        line: { color: TJ.hero, width: 2 },
+        marker: { size: 8, color: TJ.hero },
+        hovertemplate: "%{text} · %{x}<extra></extra>",
+    }], TJ.layout({
+        xaxis: TJ.axis({ type: "date", tickformat: "%b %d %Y" }),
+        yaxis: TJ.axis({ title: "grade rank", rangemode: "tozero" }),
+        showlegend: false,
+    }), TJ.config);
+})();
+</script>
 {% endblock %}

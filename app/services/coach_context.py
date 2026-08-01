@@ -26,6 +26,7 @@ def build_context(conn, days=28):
         ("workouts_recent", lambda c: _workouts(c, days)),
         ("wellness", lambda c: _wellness(c, 14)),
         ("load_summary", _load_summary),
+        ("plan", _plan),
     ]:
         md, data = builder(conn)
         snapshot[name] = data
@@ -281,3 +282,36 @@ def _load_summary(conn):
         lines.append(f"- Most recent full rest day: {'today' if rest_gap == 0 else f'{rest_gap} day(s) ago'}")
 
     return "\n".join(lines), {"weekly": weekly, "rest_gap_days": rest_gap}
+
+
+def _plan(conn):
+    items = _q(conn, """
+        SELECT id, plan_date, item_type, title, details, source
+        FROM planned_items
+        WHERE plan_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 21
+        ORDER BY plan_date, id
+    """)
+    blocks = _q(conn, """
+        SELECT id, name, start_date, end_date, focus
+        FROM training_blocks
+        WHERE end_date >= CURRENT_DATE
+        ORDER BY start_date, id
+    """)
+
+    lines = ["## Upcoming plan (next 21 days; item ids are for update/delete proposals)"]
+    for b in blocks:
+        line = f"- Block \"{b['name']}\": {b['start_date']} → {b['end_date']}"
+        if b["focus"]:
+            line += f" — {b['focus']}"
+        lines.append(line)
+    for r in items:
+        line = f"- {r['plan_date']} [id {r['id']}]: {r['item_type']} — \"{r['title']}\""
+        if r["details"]:
+            line += f" ({r['details']})"
+        if r["source"] == "coach":
+            line += " [planned by you]"
+        lines.append(line)
+    if not items and not blocks:
+        lines.append("- Nothing planned yet.")
+
+    return "\n".join(lines), {"items": items, "blocks": blocks}

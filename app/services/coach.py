@@ -37,7 +37,29 @@ their own recorded numbers, and rest times — not generic advice.
 reasoning, then the concrete session plan (or rest plan).
 
 The athlete's training context (auto-generated from their database) is provided at the \
-start of the conversation."""
+start of the conversation.
+
+Calendar proposals:
+The athlete keeps a training calendar of planned items and training blocks; the current \
+plan appears in the context under "Upcoming plan". When you want to add to or change that \
+calendar (e.g. lay out next week, or a multi-week block), end your reply with exactly one \
+fenced code block tagged calendar-proposal containing JSON in this shape:
+
+```calendar-proposal
+{"summary": "one-line description of the change",
+ "items": [
+   {"action": "add", "date": "YYYY-MM-DD", "type": "hangboard", "title": "Max hangs 20mm", "details": "5x7s half crimp @ 90% MVC"},
+   {"action": "update", "id": 14, "date": "YYYY-MM-DD", "type": "climbing", "title": "...", "details": "..."},
+   {"action": "delete", "id": 15}],
+ "blocks": [
+   {"action": "add", "name": "Strength block", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "focus": "max finger strength"}]}
+```
+
+Rules: item "type" must be one of hangboard, climbing, workout, rest, other. Only propose \
+changes for today or future dates — past days are the historical record and can never be \
+edited. For update/delete, reference item ids from the "Upcoming plan" context. The \
+athlete reviews each proposal and applies it with a click — never claim a change has \
+already been made. Omit the block entirely when you aren't proposing calendar changes."""
 
 
 class CoachNotConfigured(Exception):

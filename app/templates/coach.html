@@ -53,8 +53,80 @@
 <script>
 const md = (text) => marked.parse(text, { breaks: true });
 
-// Render stored recommendations as markdown
-document.querySelectorAll("[data-md]").forEach(el => { el.innerHTML = md(el.textContent); });
+// ── Calendar proposals ──
+// The coach ends a reply with a ```calendar-proposal fenced JSON block when it
+// wants to change the plan; render it as an Apply/Dismiss card instead of code.
+function extractProposal(text) {
+    const m = text.match(/```calendar-proposal\s*\n([\s\S]*?)```/);
+    if (!m) return null;
+    try {
+        return { data: JSON.parse(m[1]), stripped: text.replace(m[0], "").trim() };
+    } catch {
+        return null; // malformed JSON: leave it rendered as a plain code block
+    }
+}
+
+function proposalLines(p) {
+    const lines = [];
+    for (const it of p.items || []) {
+        if (it.action === "add") lines.push(`＋ ${it.date} — ${it.type}: ${it.title || ""}${it.details ? " · " + it.details : ""}`);
+        else if (it.action === "update") lines.push(`~ update item ${it.id}${it.date ? " → " + it.date : ""}${it.type ? " · " + it.type : ""}${it.title ? " · " + it.title : ""}`);
+        else lines.push(`− remove item ${it.id}`);
+    }
+    for (const b of p.blocks || []) {
+        if (b.action === "add") lines.push(`▧ block “${b.name}” ${b.start} → ${b.end}${b.focus ? " · " + b.focus : ""}`);
+        else if (b.action === "update") lines.push(`~ update block ${b.id}${b.name ? " · " + b.name : ""}${b.start ? " · " + b.start + " → " + (b.end || "?") : ""}`);
+        else lines.push(`− remove block ${b.id}`);
+    }
+    return lines;
+}
+
+function renderWithProposal(el, text) {
+    const found = extractProposal(text);
+    if (!found) { el.innerHTML = md(text); return; }
+    el.innerHTML = md(found.stripped);
+
+    const card = document.createElement("div");
+    card.className = "proposal-card";
+    card.innerHTML =
+        `<div class="proposal-title">Calendar proposal${found.data.summary ? " — " + found.data.summary : ""}</div>` +
+        proposalLines(found.data).map(l => `<div class="proposal-line">${l}</div>`).join("") +
+        `<div class="proposal-actions">
+            <button class="primary apply">Apply</button>
+            <button class="dismiss">Dismiss</button>
+            <span class="muted status"></span>
+        </div>`;
+
+    card.querySelector(".apply").addEventListener("click", async () => {
+        const btn = card.querySelector(".apply");
+        const status = card.querySelector(".status");
+        btn.disabled = true;
+        status.textContent = "applying…";
+        try {
+            const res = await fetch("/api/plan/apply-proposal", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(found.data),
+            });
+            if (res.ok) {
+                card.querySelector(".proposal-actions").innerHTML =
+                    '✓ Applied — see the <a href="/calendar">calendar</a>';
+            } else {
+                const err = await res.json().catch(() => ({}));
+                status.textContent = `⚠ ${err.detail || res.status}`;
+                btn.disabled = false;
+            }
+        } catch (e) {
+            card.querySelector(".status").textContent = `⚠ ${e}`;
+            card.querySelector(".apply").disabled = false;
+        }
+    });
+    card.querySelector(".dismiss").addEventListener("click", () => card.remove());
+    el.appendChild(card);
+}
+
+// Render stored recommendations as markdown (with proposal cards if present)
+document.querySelectorAll("[data-md]").forEach(el => { renderWithProposal(el, el.textContent); });
 
 // ── Recommendation ──
 document.getElementById("ask").addEventListener("click", async () => {
@@ -72,7 +144,7 @@ document.getElementById("ask").addEventListener("click", async () => {
             const err = await res.json().catch(() => ({}));
             out.innerHTML = `<span class="muted">⚠ ${err.detail || res.status}</span>`;
         } else {
-            out.innerHTML = md((await res.json()).recommendation);
+            renderWithProposal(out, (await res.json()).recommendation);
         }
     } catch (e) {
         out.innerHTML = `<span class="muted">⚠ ${e}</span>`;
@@ -118,6 +190,9 @@ async function send() {
         reply.innerHTML = md(text);
         log.scrollTop = log.scrollHeight;
     }
+    // Final render: swap a trailing calendar-proposal block for an Apply card
+    renderWithProposal(reply, text);
+    log.scrollTop = log.scrollHeight;
 }
 
 document.getElementById("send").addEventListener("click", send);
@@ -136,7 +211,10 @@ if (convSel) convSel.addEventListener("change", async () => {
     const res = await fetch(`/api/coach/conversations/${conversationId}`);
     const data = await res.json();
     log.innerHTML = "";
-    for (const m of data.messages) bubble(m.role, md(m.content));
+    for (const m of data.messages) {
+        if (m.role === "assistant") renderWithProposal(bubble(m.role, ""), m.content);
+        else bubble(m.role, md(m.content));
+    }
 });
 </script>
 {% endblock %}

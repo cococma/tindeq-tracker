@@ -266,3 +266,87 @@ button.primary:hover { background: var(--green); color: var(--bg); }
     font-size: 0.75rem;
     color: var(--ink);
 }
+
+/* ── Collapsible panels ── */
+details.panel > summary { cursor: pointer; color: var(--ink-bright); }
+
+/* ── Calendar ── */
+.cal-header { display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0; }
+.cal-title {
+    color: var(--ink-bright);
+    font-weight: 600;
+    min-width: 150px;
+    text-align: center;
+}
+.cal-week { margin-bottom: 4px; }
+.cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-weekdays {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+}
+.cal-weekdays div { padding: 0 0.4rem; }
+.cal-bands { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 2px; }
+.cal-band {
+    background: var(--panel-2);
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    padding: 0 0.4rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.cal-band.cont-l { border-left: none; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.cal-band.cont-r { border-right: none; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cal-day {
+    display: block;
+    min-height: 88px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.4rem;
+    color: var(--ink);
+    overflow: hidden;
+}
+.cal-day:hover { background: var(--panel-2); color: var(--ink); }
+.cal-day.out { opacity: 0.45; }
+.cal-day.today { border-color: var(--green); }
+.cal-day.selected { border-color: var(--amber); background: var(--panel-2); }
+.cal-date { color: var(--muted); font-size: 0.75rem; }
+.cal-day.today .cal-date { color: var(--green); font-weight: 700; }
+.cal-marks { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+.cal-mark {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.62rem;
+    padding: 0 0.3rem;
+    color: var(--ink);
+}
+.kind-checkin { border-color: var(--green); color: var(--green); }
+.kind-weight  { border-color: #3f83cf; }
+.cal-plan {
+    color: var(--amber);
+    font-size: 0.68rem;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cal-detail .cal-edit summary { cursor: pointer; font-size: 0.75rem; color: var(--muted); }
+.cal-block-row { border-bottom: 1px solid var(--grid); padding-bottom: 0.75rem; margin-bottom: 0.75rem; }
+
+/* ── Coach calendar-proposal card ── */
+.proposal-card {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--panel-2);
+    border: 1px solid var(--amber);
+    border-radius: 6px;
+}
+.proposal-title { color: var(--amber); font-weight: 600; margin-bottom: 0.4rem; }
+.proposal-line { font-size: 0.85rem; margin: 0.15rem 0; }
+.proposal-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.6rem; }

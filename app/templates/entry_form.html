@@ -4,12 +4,13 @@
 <h1>{{ "Edit entry" if entry else "New entry" }}</h1>
 
 <form method="post" class="panel">
+    <input type="hidden" name="next" value="{{ next }}">
     <div class="capture-form">
         <div class="field">
             <label for="entry_type">Type</label>
             <select id="entry_type" name="entry_type">
                 {% for t in ["climbing", "workout", "note"] %}
-                <option value="{{ t }}" {{ "selected" if entry and entry.entry_type == t }}>{{ t|title }}</option>
+                <option value="{{ t }}" {{ "selected" if (entry.entry_type if entry else preselect_type) == t }}>{{ t|title }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -124,7 +125,7 @@
 
     <div class="capture-actions">
         <button type="submit" class="primary">Save entry</button>
-        <a class="btn" href="/journal">Cancel</a>
+        <a class="btn" href="{{ next }}">Cancel</a>
     </div>
 </form>
 {% endblock %}
